@@ -11,8 +11,8 @@
     Exclude Hosted pools
     Include (color coded?) guidance column (upgrade os, try v3 agent)
     Include pool url in output 
-    
     Include agent url in output 
+    
     Use whitelist file: https://raw.githubusercontent.com/microsoft/azure-pipelines-agent/master/src/Agent.Listener/net6.json
     Test pools?
     Use Kusto to get useragent test data
@@ -219,8 +219,8 @@ foreach ($individualPoolId in $PoolId) {
     #                         --include-capabilities `
     #                         --query "[?!starts_with(version,'3.')]" `
     #                         -o json 
-
     # exit
+
     az pipelines agent list --pool-id $individualPoolId `
                             --include-capabilities `
                             --query "[?!starts_with(version,'3.')]" `
@@ -229,11 +229,13 @@ foreach ($individualPoolId in $PoolId) {
                             | Set-Variable agents
     $agents | ForEach-Object {
         Classify-OS -AgentOS $_.osDescription -Agent $_
+        $agentUrl = "{0}/_settings/agentpools?agentId={2}&poolId={1}" -f $OrganizationUrl,$individualPoolId,$_.id
+        $_ | Add-Member -NotePropertyName AgentUrl -NotePropertyValue $agentUrl
     } 
     if (!$All) {
         $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
     }
-    $agents | Format-Table -Property name, osDescription, V3AgentSupportsOS, OSComment
+    $agents | Format-Table -Property name, osDescription, V3AgentSupportsOS, OSComment, AgentUrl
 
     exit
 }
