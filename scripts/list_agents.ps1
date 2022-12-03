@@ -9,13 +9,14 @@
 <# TODO
     Exclude v3 agents
     Exclude Hosted pools
-
+    Include (color coded?) guidance column (upgrade os, try v3 agent)
+    Include pool url in output 
+    
+    Include agent url in output 
     Use whitelist file: https://raw.githubusercontent.com/microsoft/azure-pipelines-agent/master/src/Agent.Listener/net6.json
     Test pools?
     Use Kusto to get useragent test data
     Include semantic version (e.g. 'RHEL 6') column
-    Include (color coded?) guidance column (upgrade os, try v3 agent)
-    Include, agent url in output 
 #>
 
 #Requires -Version 7.2
@@ -206,13 +207,14 @@ if (!$PoolId) {
 }
 
 foreach ($individualPoolId in $PoolId) {
-    Write-Verbose "Retrieving pool with id '${individualPoolId}' in ${OrganizationUrl}..."
+    $poolUrl = ("{0}/_settings/agentpools?poolId={1}" -f $OrganizationUrl,$individualPoolId)
+    Write-Verbose "Retrieving pool with id '${individualPoolId}' in (${OrganizationUrl})..."
     az pipelines pool show --id $individualPoolId `
                            --query "name" `
                            -o tsv `
                            | Set-Variable poolName
     
-    Write-Host "Retrieving agents for pool '${poolName}' in ${OrganizationUrl}..."
+    Write-Host "Retrieving agents for pool '${poolName}' (${poolUrl})..."
     # az pipelines agent list --pool-id $individualPoolId `
     #                         --include-capabilities `
     #                         --query "[?!starts_with(version,'3.')]" `
