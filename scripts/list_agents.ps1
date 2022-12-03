@@ -10,7 +10,6 @@
     Exclude v3 agents
     Exclude Hosted pools
 
-    Flatten agent json
     Use whitelist file: https://raw.githubusercontent.com/microsoft/azure-pipelines-agent/master/src/Agent.Listener/net6.json
     Test pools?
     Use Kusto to get useragent test data
@@ -22,16 +21,49 @@
 #Requires -Version 7.2
 
 param ( 
-    [parameter(Mandatory=$false)][string]$OrganizationUrl=$env:AZDO_ORG_SERVICE_URL,
-    [parameter(Mandatory=$false)][int[]]$PoolId,
-    [parameter(Mandatory=$false)][string]$Token=$env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN
+    [parameter(Mandatory=$false,ParameterSetName="pool")]
+    [string]
+    $OrganizationUrl=$env:AZDO_ORG_SERVICE_URL,
+    
+    [parameter(Mandatory=$false,ParameterSetName="pool")]
+    [int[]]
+    $PoolId,
+    
+    [parameter(Mandatory=$false,ParameterSetName="pool")]
+    [string]
+    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN),
+    
+    [parameter(Mandatory=$false,ParameterSetName="os")]
+    [string[]]
+    $OS,
+
+    [parameter(Mandatory=$false)]
+    [switch]
+    $All
+
 ) 
 
+function Classify-OS (
+    [parameter(Mandatory=$true)][string]$AgentOS,
+    [parameter(Mandatory=$true)][psobject]$Agent
+) {
+    $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
+    $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
+    if ($v3AgentSupportsOS -eq $null) {
+        $osComment = "$($PSStyle.Formatting.Warning)Could not detect OS$($PSStyle.Reset)"
+    } elseif ($v3AgentSupportsOS) {
+        $osComment = "OS supported by v3 agent"
+    } else {
+        $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent$($PSStyle.Reset)"
+    }
+    $Agent | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
+}
+
 function Validate-OS (
-    [parameter(Mandatory=$true)][string]$OS
+    [parameter(Mandatory=$true)][string]$OSDescription
 ) {
     # Parse operating system header
-    switch -regex ($OS) {
+    switch -regex ($OSDescription) {
         # Debian "Linux 4.9.0-16-amd64 #1 SMP Debian 4.9.272-2 (2021-07-19)"
         "(?im)^Linux.* Debian (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+))?.*$"  {
             Write-Verbose "OS is Debian"
@@ -40,6 +72,14 @@ function Validate-OS (
             [version]$minKernelVersion = '5.0' 
 
             return ($kernelVersion -ge $minKernelVersion)
+        }
+        # Fedora "Linux 5.11.22-100.fc32.x86_64 #1 SMP Wed May 19 18:58:25 UTC 2021"
+        "(?im)^Linux.*\.fc(?<Major>[\d]+)\..*$"  {
+            Write-Verbose "OS is Fedora"
+            [int]$fedoraVersion = $Matches["Major"]
+            Write-Verbose "Fedora ${fedoraVersion}"
+
+            return ($fedoraVersion -ge 33)
         }
         # Red Hat "Linux 4.18.0-425.3.1.el8.x86_64 #1 SMP Fri Sep 30 11:45:06 EDT 2022"
         "(?im)^Linux.*\.el(?<Major>[\d]+).*$"  {
@@ -50,12 +90,23 @@ function Validate-OS (
             return ($majorVersion -ge 7)
         }
         # Ubuntu "Linux 4.15.0-1113-azure #126~16.04.1-Ubuntu SMP Tue Apr 13 16:55:24 UTC 2021"
-        "(?im)^Linux.*[^\d]+((?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+))(\.(?<Revision>[\d]+))?)-Ubuntu.*$"  {
+        "(?im)^Linux.*[^\d]+((?<Major>[\d]+)((\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)))(\.(?<Revision>[\d]+))?)-Ubuntu.*$"  {
             Write-Verbose "OS is Ubuntu"
             $majorVersion = $Matches["Major"]
             Write-Verbose "Ubuntu ${majorVersion}"
 
             return ($majorVersion -ge 16)
+        }
+        # Ubuntu "Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:32 UTC 2015"
+        "(?im)^Linux (?<KernelMajor>[\d]+)(\.(?<KernelMinor>[\d]+)).*-Ubuntu.*$" {
+            Write-Verbose "OS is Ubuntu, no version declared"
+            [version]$kernelVersion = ("{0}.{1}" -f $Matches["KernelMajor"],$Matches["KernelMinor"])
+            Write-Verbose "Ubuntu Linux Kernel $($kernelVersion.ToString())"
+            [version]$minKernelVersion = '3.16' 
+
+            if ($kernelVersion -lt $minKernelVersion) {
+                return $false
+            }
         }
         # Windows 10 / Server 2016+ "Microsoft Windows 10.0.20348"
         "(?im)^Microsoft Windows (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$"  {
@@ -86,6 +137,24 @@ function Validate-OS (
     }
 }
 
+if ($OS) {
+    # Process OS headers passed as input
+    $OS | ForEach-Object {
+        New-Object PSObject -Property @{
+            OS = $_
+        } | Set-Variable agent
+        Classify-OS -AgentOS $_ -Agent $agent
+        Write-Output $agent
+    } | Set-Variable agents
+    if (!$All) {
+        $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
+    }
+    $agents | Format-Table
+
+    exit
+}
+
+# Gather data from Azure DevOps, proceed to validate arguments required
 $apiVersion = "7.1-preview"
 
 # Validation & Parameter processing
@@ -139,17 +208,11 @@ foreach ($individualPoolId in $PoolId) {
                             | ConvertFrom-Json `
                             | Set-Variable agents
     $agents | ForEach-Object {
-        $v3AgentSupportsOS = Validate-OS -OS $_.osDescription
-        $_ | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
-        if ($v3AgentSupportsOS -eq $null) {
-            $osComment = "$($PSStyle.Formatting.Warning)Could not detect OS$($PSStyle.Reset)"
-        } elseif ($v3AgentSupportsOS) {
-            $osComment = "OS supported by v3 agent"
-        } else {
-            $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent$($PSStyle.Reset)"
-        }
-        $_ | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
+        Classify-OS -AgentOS $_.osDescription -Agent $_
     } 
+    if (!$All) {
+        $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
+    }
     $agents | Format-Table -Property name, osDescription, V3AgentSupportsOS, OSComment
 
     exit
