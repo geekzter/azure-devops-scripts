@@ -12,7 +12,7 @@
     Include (color coded?) guidance column (upgrade os, try v3 agent)
     Include pool url in output 
     Include agent url in output 
-    
+
     Use whitelist file: https://raw.githubusercontent.com/microsoft/azure-pipelines-agent/master/src/Agent.Listener/net6.json
     Test pools?
     Use Kusto to get useragent test data
@@ -41,7 +41,6 @@ param (
     [parameter(Mandatory=$false)]
     [switch]
     $All
-
 ) 
 
 function Classify-OS (
@@ -51,7 +50,7 @@ function Classify-OS (
     $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
     if ($v3AgentSupportsOS -eq $null) {
-        $osComment = "$($PSStyle.Formatting.Warning)Could not detect OS$($PSStyle.Reset)"
+        $osComment = "$($PSStyle.Formatting.Warning)Could not detect OS (version)$($PSStyle.Reset)"
     } elseif ($v3AgentSupportsOS) {
         $osComment = "OS supported by v3 agent"
     } else {
@@ -93,10 +92,16 @@ function Validate-OS (
         # Ubuntu "Linux 4.15.0-1113-azure #126~16.04.1-Ubuntu SMP Tue Apr 13 16:55:24 UTC 2021"
         "(?im)^Linux.*[^\d]+((?<Major>[\d]+)((\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)))(\.(?<Revision>[\d]+))?)-Ubuntu.*$"  {
             Write-Verbose "OS is Ubuntu"
-            $majorVersion = $Matches["Major"]
+            [int]$majorVersion = $Matches["Major"]
             Write-Verbose "Ubuntu ${majorVersion}"
 
-            return ($majorVersion -ge 16)
+            if ($majorVersion -lt 16) {
+                return $false
+            }
+            if (($majorVersion % 2) -ne 0) {
+                return $null
+            }
+            return $true
         }
         # Ubuntu "Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:32 UTC 2015"
         "(?im)^Linux (?<KernelMajor>[\d]+)(\.(?<KernelMinor>[\d]+)).*-Ubuntu.*$" {
@@ -126,25 +131,20 @@ function Validate-OS (
             [version]$windowsVersion = ("{0}.{1}.{2}" -f $Matches["Major"],$Matches["Minor"],$Matches["Build"])
             Write-Verbose "OS is Windows"
             Write-Verbose "Windows $($windowsVersion.ToString())"
-            # if ($windowsMajorVersion -le 6) {
-            #     return ($windowsMinorVersion -ge 3)
-            # }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 1)) {
                 # Windows 7
                 return ($windowsBuild -ge 7601)
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 2)) {
-                # Windows 8 / Windows 2012 R1
+                # Windows 8 / Windows Server 2012 R1
                 return $false
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 3)) {
-                # Windows 8.1 / Windows 2012 R2
+                # Windows 8.1 / Windows Server 2012 R2
                 return $true
             }
-            if ($windowsMajorVersion -eq 8) {
-                return ($windowsMinorVersion -ge 1)
-            }
             if ($windowsMajorVersion -eq 10) {
+                # Windows 10 / Windows Server 2016+
                 return ($windowsBuild -ge 14393)
             }
             return $null
@@ -168,7 +168,7 @@ if ($OS) {
     if (!$All) {
         $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
     }
-    $agents | Format-Table
+    $agents | Format-Table -Property OS, OSComment
 
     exit
 }
@@ -235,7 +235,7 @@ foreach ($individualPoolId in $PoolId) {
     if (!$All) {
         $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
     }
-    $agents | Format-Table -Property name, osDescription, V3AgentSupportsOS, OSComment, AgentUrl
+    $agents | Format-Table -Property name, osDescription, OSComment, AgentUrl
 
     exit
 }
