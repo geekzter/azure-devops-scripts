@@ -81,7 +81,7 @@ function Validate-OS (
 
             return ($fedoraVersion -ge 33)
         }
-        # Red Hat "Linux 4.18.0-425.3.1.el8.x86_64 #1 SMP Fri Sep 30 11:45:06 EDT 2022"
+        # Red Hat / CentOS "Linux 4.18.0-425.3.1.el8.x86_64 #1 SMP Fri Sep 30 11:45:06 EDT 2022"
         "(?im)^Linux.*\.el(?<Major>[\d]+).*$"  {
             Write-Verbose "OS is Red Hat"
             $majorVersion = $Matches["Major"]
@@ -108,6 +108,15 @@ function Validate-OS (
                 return $false
             }
         }
+        # macOS "Darwin 17.6.0 Darwin Kernel Version 17.6.0: Tue May  8 15:22:16 PDT 2018; root:xnu-4570.61.1~1/RELEASE_X86_64"
+        "(?im)^Darwin (?<DarwinMajor>[\d]+)(\.(?<DarwinMinor>[\d]+)).*$" {
+            Write-Verbose "OS is Darwin"
+            [version]$darwinVersion = ("{0}.{1}" -f $Matches["DarwinMajor"],$Matches["DarwinMinor"])
+            Write-Verbose "Darwin $($darwinVersion.ToString())"
+            [version]$minDarwinVersion = '19.0' 
+
+            return ($darwinVersion -ge $minDarwinVersion)
+        }
         # Windows 10 / Server 2016+ "Microsoft Windows 10.0.20348"
         "(?im)^Microsoft Windows (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$"  {
             [int]$windowsMajorVersion = $Matches["Major"]
@@ -116,11 +125,20 @@ function Validate-OS (
             [version]$windowsVersion = ("{0}.{1}.{2}" -f $Matches["Major"],$Matches["Minor"],$Matches["Build"])
             Write-Verbose "OS is Windows"
             Write-Verbose "Windows $($windowsVersion.ToString())"
-            if ($windowsMajorVersion -le 6) {
+            # if ($windowsMajorVersion -le 6) {
+            #     return ($windowsMinorVersion -ge 3)
+            # }
+            if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 1)) {
+                # Windows 7
+                return ($windowsBuild -ge 7601)
+            }
+            if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 2)) {
+                # Windows 8 / Windows 2012 R1
                 return $false
             }
-            if ($windowsMajorVersion -eq 7) {
-                return ($windowsBuild -ge 7601)
+            if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 3)) {
+                # Windows 8.1 / Windows 2012 R2
+                return $true
             }
             if ($windowsMajorVersion -eq 8) {
                 return ($windowsMinorVersion -ge 1)
