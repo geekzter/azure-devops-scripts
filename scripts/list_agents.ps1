@@ -13,9 +13,10 @@
 
     For more information, go to https://aka.ms/azdo-pipeline-agent-version.
 .EXAMPLE
-    ./list_agents.ps1 -PoolId 1234
+    ./list_agents.ps1 -Token "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 .EXAMPLE
+    $env:AZURE_DEVOPS_EXT_PAT = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     ./list_agents.ps1 -PoolId 1234 -Filter V3InCompatible -Verbose
 #> 
 
@@ -30,6 +31,10 @@ param (
     [parameter(Mandatory=$false,ParameterSetName="pool")]
     [int[]]
     $PoolId,
+    
+    [parameter(Mandatory=$false,ParameterSetName="pool")]
+    [int]
+    $MaxPools=4096,
     
     [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'Agent Pools' scope",ParameterSetName="pool")]
     [string]
@@ -297,11 +302,14 @@ $PoolId | Measure-Object `
 
 
 $script:allAgents = [System.Collections.ArrayList]@()
-# $script:allAgents = New-Object System.Collections.Generic.List[System.Management.Automation.PSCustomObject]
 try {
     $poolIndex = 0;
+    $totalNumberOfAgents = 0;
     foreach ($individualPoolId in $PoolId) {
         $poolIndex++
+        if ($poolIndex -gt $MaxPools) {
+            break
+        }
         $OuterLoopProgressParameters = @{
             ID               = 0
             Activity         = "Processing pools"
@@ -328,15 +336,16 @@ try {
         if ($agents) {
             $agents | Measure-Object `
                     | Select-Object -ExpandProperty Count `
-                    | Set-Variable totalNumberOfAgents
+                    | Set-Variable totalNumberOfAgentsInPool
             $agentIndex = 0
             $agents | ForEach-Object {
                 $agentIndex++
+                $totalNumberOfAgents++
                 $InnerLoopProgressParameters = @{
                     ID               = 1
                     Activity         = "Processing agents"
-                    Status           = "Agent ${agentIndex} of ${totalNumberOfAgents} in pool ${poolIndex}"
-                    PercentComplete  = ($agentIndex / $totalNumberOfAgents) * 100
+                    Status           = "Agent ${agentIndex} of ${totalNumberOfAgentsInPool} in pool ${poolIndex}"
+                    PercentComplete  = ($agentIndex / $totalNumberOfAgentsInPool) * 100
                     CurrentOperation = 'InnerLoop'
                 }
                 Write-Progress @InnerLoopProgressParameters                
@@ -360,7 +369,7 @@ try {
                                              OSComment,`
                                              AgentUrl
 
-            $script:allAgents.Add(($agents | Filter-Agents)) | Out-Null
+            $script:allAgents.Add($agents) | Out-Null
         } else {
             Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
         }
@@ -368,25 +377,41 @@ try {
     Write-Progress Id 0 -Completed
     Write-Progress Id 1 -Completed
 } finally {
+    Write-Host "`nInterrupted, creating summary..."
+    Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
 
-    $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
+    # Flatten nested arrays 
     $script:allAgents | ForEach-Object {
-                            # Flatten nested arrays 
                             $_ 
                         } `
-                      | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
-                        OS,`
-                        OSComment,`
-                        PoolName,`
-                        AgentUrl `
-                        | Export-Csv -Path $exportFilePath
+                      | Set-Variable allAgents -Scope script `
+                      | Set-Variable data -Scope global
+
+    Write-Host "Agents by v2 -> v3 compatibility:"
+    $script:allAgents | Group-Object -Property V3AgentSupportsOS `
+                      | Select-Object -Property Count,Name
+
+    $script:allAgents | Filter-Agents `
+                      | Sort-Object -Property @{Expression = "V3AgentSupportsOS"; Descending = $true}, `
+                                              @{Expression = "PoolName"; Descending = $false}, `
+                                              @{Expression = "name"; Descending = $false} `
+                      | Set-Variable allAgents -Scope script
+    
+    $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
+    $script:allAgents | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
+                                                OS,`
+                                                OSComment,`
+                                                PoolName,`
+                                                AgentUrl `
+                      | Export-Csv -Path $exportFilePath
+
     Write-Host "Retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
     $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
-                        @{Label="Status"; Expression={$_.status}},`
-                        OS,`
-                        OSComment,`
-                        PoolName,`
-                        AgentUrl `
+                                               @{Label="Status"; Expression={$_.status}},`
+                                               OS,`
+                                               OSComment,`
+                                               PoolName,`
+                                               AgentUrl `
                       | Out-Host -Paging
                     
     Write-Host "Retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"                    
