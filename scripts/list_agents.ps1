@@ -277,6 +277,10 @@ if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
     az extension add -n azure-devops -y
 }
 
+Write-Host "$($PSStyle.Formatting.FormatAccent)This script will process all self-hosted pools in organization '${OrganizationUrl}' to:$($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}' $($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list$($PSStyle.Reset)"
+
 Write-Host "Authenticating to organization ${OrganizationUrl}..."
 $Token | az devops login --organization $OrganizationUrl
 az devops configure --defaults organization=$OrganizationUrl
@@ -301,12 +305,6 @@ try {
                                | Set-Variable poolName
         
         Write-Host "Retrieving v2 agents for pool '${poolName}' (${poolUrl})..."
-        # az pipelines agent list --pool-id $individualPoolId `
-        #                         --include-capabilities `
-        #                         --query "[?!starts_with(version,'3.')]" `
-        #                         -o json 
-        # exit
-    
         az pipelines agent list --pool-id $individualPoolId `
                                 --include-capabilities `
                                 --query "[?starts_with(version,'2.')]" `
@@ -335,11 +333,7 @@ try {
                                              OSComment,`
                                              AgentUrl
 
-            # if ($agents.GetType().BAseType -ieq 'System.Array') {
-            #     $script:allAgents.AddRange($agents)
-            # } else {
-                $script:allAgents.Add($agents) | Out-Null
-            # }
+            $script:allAgents.Add(($agents | Filter-Agents)) | Out-Null
         } else {
             Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
         }
