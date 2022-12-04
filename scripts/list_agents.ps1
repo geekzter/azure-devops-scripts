@@ -39,8 +39,9 @@ param (
     $OS,
 
     [parameter(Mandatory=$false)]
-    [switch]
-    $All
+    [ValidateSet("V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible", "All")]
+    [string]
+    $Filter="V3CompatibilityIssues"
 ) 
 
 function Classify-OS (
@@ -50,13 +51,39 @@ function Classify-OS (
     $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
     if ($v3AgentSupportsOS -eq $null) {
-        $osComment = "$($PSStyle.Formatting.Warning)Could not detect OS (version)$($PSStyle.Reset)"
+        $osComment = "$($PSStyle.Formatting.Warning)Could not determine OS (version), v2 agent won't automatically upgrade to v3$($PSStyle.Reset)"
     } elseif ($v3AgentSupportsOS) {
-        $osComment = "OS supported by v3 agent"
+        $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
     } else {
-        $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent$($PSStyle.Reset)"
+        $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent, v2 agent won't upgrade to v3$($PSStyle.Reset)"
     }
     $Agent | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
+}
+
+function Filter-Agents (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)][psobject[]]$Agents
+) {
+    begin {}
+    process {
+        switch ($Filter) {
+            "V3Compatible" {
+                $Agents | Where-Object -Property V3AgentSupportsOS -eq $true
+            } 
+            "V3CompatibilityIssues" {
+                $Agents | Where-Object -Property V3AgentSupportsOS -ne $true
+            } 
+            "V3CompatibilityUnknown" {
+                $Agents | Where-Object -Property V3AgentSupportsOS -eq $null
+            } 
+            "V3InCompatible" {
+                $Agents | Where-Object -Property V3AgentSupportsOS -eq $false
+            } 
+            "All" {
+                $Agents
+            }
+        }    
+    }
+    end {}
 }
 
 function Validate-OS (
@@ -104,15 +131,17 @@ function Validate-OS (
             return $true
         }
         # Ubuntu "Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:32 UTC 2015"
+        # Ubuntu 22 "Linux 5.15.0-1023-azure #29-Ubuntu SMP Wed Oct 19 22:37:08 UTC 2022 x86_64 x86_64 x86_64 GNU/Linux"
         "(?im)^Linux (?<KernelMajor>[\d]+)(\.(?<KernelMinor>[\d]+)).*-Ubuntu.*$" {
             Write-Verbose "OS is Ubuntu, no version declared"
             [version]$kernelVersion = ("{0}.{1}" -f $Matches["KernelMajor"],$Matches["KernelMinor"])
             Write-Verbose "Ubuntu Linux Kernel $($kernelVersion.ToString())"
-            [version]$minKernelVersion = '3.16' 
+            [version]$minKernelVersion = '4.4' 
 
-            if ($kernelVersion -lt $minKernelVersion) {
+            if ($kernelVersion -lt $minKernelVersion ) {
                 return $false
             }
+            return $null
         }
         # macOS "Darwin 17.6.0 Darwin Kernel Version 17.6.0: Tue May  8 15:22:16 PDT 2018; root:xnu-4570.61.1~1/RELEASE_X86_64"
         "(?im)^Darwin (?<DarwinMajor>[\d]+)(\.(?<DarwinMinor>[\d]+)).*$" {
@@ -165,10 +194,8 @@ if ($OS) {
         Classify-OS -AgentOS $_ -Agent $agent
         Write-Output $agent
     } | Set-Variable agents
-    if (!$All) {
-        $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
-    }
-    $agents | Format-Table -Property OS, OSComment
+
+    $agents | Filter-Agents | Format-Table -Property OS, OSComment
 
     exit
 }
@@ -215,12 +242,6 @@ foreach ($individualPoolId in $PoolId) {
                            | Set-Variable poolName
     
     Write-Host "Retrieving agents for pool '${poolName}' (${poolUrl})..."
-    # az pipelines agent list --pool-id $individualPoolId `
-    #                         --include-capabilities `
-    #                         --query "[?!starts_with(version,'3.')]" `
-    #                         -o json 
-    # exit
-
     az pipelines agent list --pool-id $individualPoolId `
                             --include-capabilities `
                             --query "[?!starts_with(version,'3.')]" `
@@ -235,7 +256,7 @@ foreach ($individualPoolId in $PoolId) {
     if (!$All) {
         $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
     }
-    $agents | Format-Table -Property name, osDescription, OSComment, AgentUrl
+    $agents | Filter-Agents | Format-Table -Property name, osDescription, OSComment, AgentUrl
 
     exit
 }
