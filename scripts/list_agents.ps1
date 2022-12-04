@@ -288,50 +288,63 @@ if (!$PoolId) {
                            | Set-Variable PoolId
 }
 
-foreach ($individualPoolId in $PoolId) {
-    $agents = $null
-    $poolUrl = ("{0}/_settings/agentpools?poolId={1}" -f $OrganizationUrl,$individualPoolId)
-    Write-Verbose "Retrieving pool with id '${individualPoolId}' in (${OrganizationUrl})..."
-    az pipelines pool show --id $individualPoolId `
-                           --query "name" `
-                           -o tsv `
-                           | Set-Variable poolName
+$script:allAgents = [System.Collections.ArrayList]@()
+try {
+    foreach ($individualPoolId in $PoolId) {
+        $agents = $null
+        $poolUrl = ("{0}/_settings/agentpools?poolId={1}" -f $OrganizationUrl,$individualPoolId)
+        Write-Verbose "Retrieving pool with id '${individualPoolId}' in (${OrganizationUrl})..."
+        az pipelines pool show --id $individualPoolId `
+                               --query "name" `
+                               -o tsv `
+                               | Set-Variable poolName
+        
+        Write-Host "Retrieving v2 agents for pool '${poolName}' (${poolUrl})..."
+        # az pipelines agent list --pool-id $individualPoolId `
+        #                         --include-capabilities `
+        #                         --query "[?!starts_with(version,'3.')]" `
+        #                         -o json 
+        # exit
     
-    Write-Host "Retrieving agents for pool '${poolName}' (${poolUrl})..."
-    # az pipelines agent list --pool-id $individualPoolId `
-    #                         --include-capabilities `
-    #                         --query "[?!starts_with(version,'3.')]" `
-    #                         -o json 
-    # exit
-
-    az pipelines agent list --pool-id $individualPoolId `
-                            --include-capabilities `
-                            --query "[?!starts_with(version,'3.')]" `
-                            -o json `
-                            | ConvertFrom-Json `
-                            | Set-Variable agents
-    if ($agents) {
-        $agents | ForEach-Object {
-            $osConsolidated = $_.osDescription
-            $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
-            if ($capabilityOSDescription -and !$osConsolidated) {
-                $osConsolidated = $capabilityOSDescription
-            }
-            Write-Debug "osConsolidated: ${osConsolidated}"
-            Write-Debug "capabilityOSDescription: ${capabilityOSDescription}"
-            Classify-OS -AgentOS $osConsolidated -Agent $_
-            $agentUrl = "{0}/_settings/agentpools?agentId={2}&poolId={1}" -f $OrganizationUrl,$individualPoolId,$_.id
-            $_ | Add-Member -NotePropertyName AgentUrl -NotePropertyValue $agentUrl
-            $_ | Add-Member -NotePropertyName OS -NotePropertyValue $osConsolidated
-        } 
-        $agents | Filter-Agents `
-                | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
-                                         @{Label="Status"; Expression={$_.status}},`
-                                         OS,`
-                                         OSComment,`
-                                         AgentUrl `
-                | Out-Host -Paging
-    } else {
-        Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
+        az pipelines agent list --pool-id $individualPoolId `
+                                --include-capabilities `
+                                --query "[?starts_with(version,'2.')]" `
+                                -o json `
+                                | ConvertFrom-Json `
+                                | Set-Variable agents
+        if ($agents) {
+            $agents | ForEach-Object {
+                $osConsolidated = $_.osDescription
+                $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
+                if ($capabilityOSDescription -and !$osConsolidated) {
+                    $osConsolidated = $capabilityOSDescription
+                }
+                Write-Debug "osConsolidated: ${osConsolidated}"
+                Write-Debug "capabilityOSDescription: ${capabilityOSDescription}"
+                Classify-OS -AgentOS $osConsolidated -Agent $_
+                $agentUrl = "{0}/_settings/agentpools?agentId={2}&poolId={1}" -f $OrganizationUrl,$individualPoolId,$_.id
+                $_ | Add-Member -NotePropertyName AgentUrl -NotePropertyValue $agentUrl
+                $_ | Add-Member -NotePropertyName OS -NotePropertyValue $osConsolidated
+                $_ | Add-Member -NotePropertyName PoolName -NotePropertyValue $poolName
+            } 
+            $agents | Filter-Agents `
+                    | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
+                                             @{Label="Status"; Expression={$_.status}},`
+                                             OS,`
+                                             OSComment,`
+                                             AgentUrl
+            $script:allAgents.Add($agents) | Out-Null
+        } else {
+            Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
+        }
     }
+} finally {
+    Write-Host "All retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}):"
+    $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
+                        @{Label="Status"; Expression={$_.status}},`
+                        OS,`
+                        OSComment,`
+                        PoolName,`
+                        AgentUrl `
+                      | Out-Host -Paging
 }
