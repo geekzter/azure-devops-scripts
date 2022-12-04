@@ -303,6 +303,7 @@ try {
     foreach ($individualPoolId in $PoolId) {
         $poolIndex++
         $OuterLoopProgressParameters = @{
+            ID               = 0
             Activity         = "Processing pools"
             Status           = "Pool ${poolIndex} of ${totalNumberOfPools}"
             PercentComplete  =  ($poolIndex / $totalNumberOfPools) * 100
@@ -334,7 +335,7 @@ try {
                 $InnerLoopProgressParameters = @{
                     ID               = 1
                     Activity         = "Processing agents"
-                    Status           = "Agent ${agentIndex} of ${totalNumberOfAgents}"
+                    Status           = "Agent ${agentIndex} of ${totalNumberOfAgents} in pool ${poolIndex}"
                     PercentComplete  = ($agentIndex / $totalNumberOfAgents) * 100
                     CurrentOperation = 'InnerLoop'
                 }
@@ -364,7 +365,10 @@ try {
             Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
         }
     }
+    Write-Progress Id 0 -Completed
+    Write-Progress Id 1 -Completed
 } finally {
+
     $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
     $script:allAgents | ForEach-Object {
                             # Flatten nested arrays 
@@ -384,4 +388,6 @@ try {
                         PoolName,`
                         AgentUrl `
                       | Out-Host -Paging
+                    
+    Write-Host "Retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"                    
 }
