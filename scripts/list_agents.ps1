@@ -278,7 +278,7 @@ if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
 }
 
 Write-Host "$($PSStyle.Formatting.FormatAccent)This script will process all self-hosted pools in organization '${OrganizationUrl}' to:$($PSStyle.Reset)"
-Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}' $($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}' (list repeated at the end of script output) $($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list$($PSStyle.Reset)"
 
 Write-Host "Authenticating to organization ${OrganizationUrl}..."
@@ -291,11 +291,24 @@ if (!$PoolId) {
                            -o tsv `
                            | Set-Variable PoolId
 }
+$PoolId | Measure-Object `
+        | Select-Object -ExpandProperty Count `
+        | Set-Variable totalNumberOfPools
+
 
 $script:allAgents = [System.Collections.ArrayList]@()
 # $script:allAgents = New-Object System.Collections.Generic.List[System.Management.Automation.PSCustomObject]
 try {
+    $poolIndex = 0;
     foreach ($individualPoolId in $PoolId) {
+        $poolIndex++
+        $OuterLoopProgressParameters = @{
+            Activity         = "Processing pools"
+            Status           = "Pool ${poolIndex} of ${totalNumberOfPools}"
+            PercentComplete  =  ($poolIndex / $totalNumberOfPools) * 100
+            CurrentOperation = 'OuterLoop'
+        }
+        Write-Progress @OuterLoopProgressParameters
         $agents = $null
         $poolUrl = ("{0}/_settings/agentpools?poolId={1}" -f $OrganizationUrl,$individualPoolId)
         Write-Verbose "Retrieving pool with id '${individualPoolId}' in (${OrganizationUrl})..."
@@ -312,7 +325,20 @@ try {
                                 | ConvertFrom-Json `
                                 | Set-Variable agents
         if ($agents) {
+            $agents | Measure-Object `
+                    | Select-Object -ExpandProperty Count `
+                    | Set-Variable totalNumberOfAgents
+            $agentIndex = 0
             $agents | ForEach-Object {
+                $agentIndex++
+                $InnerLoopProgressParameters = @{
+                    ID               = 1
+                    Activity         = "Processing agents"
+                    Status           = "Agent ${agentIndex} of ${totalNumberOfAgents}"
+                    PercentComplete  = ($agentIndex / $totalNumberOfAgents) * 100
+                    CurrentOperation = 'InnerLoop'
+                }
+                Write-Progress @InnerLoopProgressParameters                
                 $osConsolidated = $_.osDescription
                 $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
                 if ($capabilityOSDescription -and !$osConsolidated) {
