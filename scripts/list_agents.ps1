@@ -289,6 +289,7 @@ if (!$PoolId) {
 }
 
 $script:allAgents = [System.Collections.ArrayList]@()
+# $script:allAgents = New-Object System.Collections.Generic.List[System.Management.Automation.PSCustomObject]
 try {
     foreach ($individualPoolId in $PoolId) {
         $agents = $null
@@ -333,13 +334,29 @@ try {
                                              OS,`
                                              OSComment,`
                                              AgentUrl
-            $script:allAgents.Add($agents) | Out-Null
+
+            # if ($agents.GetType().BAseType -ieq 'System.Array') {
+            #     $script:allAgents.AddRange($agents)
+            # } else {
+                $script:allAgents.Add($agents) | Out-Null
+            # }
         } else {
             Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
         }
     }
 } finally {
-    Write-Host "All retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}):"
+    $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
+    $script:allAgents | ForEach-Object {
+                            # Flatten nested arrays 
+                            $_ 
+                        } `
+                      | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
+                        OS,`
+                        OSComment,`
+                        PoolName,`
+                        AgentUrl `
+                        | Export-Csv -Path $exportFilePath
+    Write-Host "Retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
     $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                         @{Label="Status"; Expression={$_.status}},`
                         OS,`
