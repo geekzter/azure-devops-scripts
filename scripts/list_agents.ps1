@@ -1,26 +1,27 @@
 #!/usr/bin/env pwsh
 <# 
 .SYNOPSIS 
- 
-.DESCRIPTION 
-    
-.EXAMPLE
-#> 
-<# TODO
-    Exclude v3 agents
-    Exclude Hosted pools
-    Include (color coded?) guidance column (upgrade os, try v3 agent)
-    Include pool url in output 
-    Include agent url in output 
+    Predict whether agents will be able to upgrade frpm pipeline agent v2 to agent v3
 
-    Use whitelist file: https://raw.githubusercontent.com/microsoft/azure-pipelines-agent/master/src/Agent.Listener/net6.json
-    Test pools?
-    Use Kusto to get useragent test data
-    Include semantic version (e.g. 'RHEL 6') column
-#>
+.DESCRIPTION 
+    Azure Pipeline agent v2 uses .NET 3.1 Core, while agent v3 runs on .NET 6. This means agent v3 will drop support for operating systems not supported by .NET 6 (https://github.com/dotnet/core/blob/main/release-notes/6.0/supported-os.md)
+    This script will try to predict whether an agent will be able to upgrade, using the osDescription attribute of the agent. For Linux and macOS, this contains the output of 'uname -a`.
+    Note the Pipeline agent has more context about the operating system of the host it is running un (e.g. 'lsb_release -a' output), and is able to make a better informed decision on whether to upgrade or not.
+    Hence the output of this script is an indication wrt what the agent will do, but will include results where there is no sufficient information to include a prediction.
+
+    This script requires a PAT token with read access on 'Agent Pools' scope.
+
+    For more information, go to https://aka.ms/azdo-pipeline-agent-version.
+.EXAMPLE
+    ./list_agents.ps1 -PoolId 1234
+
+.EXAMPLE
+    ./list_agents.ps1 -PoolId 1234 -Filter V3InCompatible -Verbose
+#> 
 
 #Requires -Version 7.2
 
+[CmdletBinding(DefaultParameterSetName="pool")]
 param ( 
     [parameter(Mandatory=$false,ParameterSetName="pool")]
     [string]
@@ -30,7 +31,7 @@ param (
     [int[]]
     $PoolId,
     
-    [parameter(Mandatory=$false,ParameterSetName="pool")]
+    [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'Agent Pools' scope",ParameterSetName="pool")]
     [string]
     $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN),
     
@@ -39,6 +40,8 @@ param (
     $OS,
 
     [parameter(Mandatory=$false)]
+    [parameter(ParameterSetName="pool")]
+    [parameter(ParameterSetName="os")]
     [ValidateSet("V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible", "All")]
     [string]
     $Filter="V3CompatibilityIssues"
@@ -51,7 +54,7 @@ function Classify-OS (
     $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
     if ($v3AgentSupportsOS -eq $null) {
-        $osComment = "$($PSStyle.Formatting.Warning)Could not determine OS (version), v2 agent won't automatically upgrade to v3$($PSStyle.Reset)"
+        $osComment = "$($PSStyle.Formatting.Warning)OS (version) unknown, v2 agent won't upgrade to v3 automatically$($PSStyle.Reset)"
     } elseif ($v3AgentSupportsOS) {
         $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
     } else {
@@ -63,7 +66,6 @@ function Classify-OS (
 function Filter-Agents (
     [parameter(Mandatory=$true,ValueFromPipeline=$true)][psobject[]]$Agents
 ) {
-    begin {}
     process {
         switch ($Filter) {
             "V3Compatible" {
@@ -81,9 +83,11 @@ function Filter-Agents (
             "All" {
                 $Agents
             }
+            default {
+                $Agents
+            }
         }    
     }
-    end {}
 }
 
 function Validate-OS (
@@ -93,64 +97,93 @@ function Validate-OS (
     switch -regex ($OSDescription) {
         # Debian "Linux 4.9.0-16-amd64 #1 SMP Debian 4.9.272-2 (2021-07-19)"
         "(?im)^Linux.* Debian (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+))?.*$"  {
-            Write-Verbose "OS is Debian"
+            Write-Debug "Debian: '$OSDescription'"
             [version]$kernelVersion = ("{0}.{1}" -f $Matches["Major"],$Matches["Minor"])
-            Write-Verbose "Debian Linux Kernel $($kernelVersion.ToString())"
-            [version]$minKernelVersion = '5.0' 
+            Write-Debug "Debian Linux Kernel $($kernelVersion.ToString())"
+            [version]$minKernelVersion = '4.19' # https://wiki.debian.org/DebianBuster 
 
-            return ($kernelVersion -ge $minKernelVersion)
+            if ($kernelVersion -ge $minKernelVersion) {
+                Write-Debug "Supported Debian Linux kernel version: ${kernelVersion}"
+                return $true
+            } else {
+                Write-Verbose "Unsupported Debian Linux kernel version: ${kernelVersion} (see https://wiki.debian.org/DebianReleases)"
+                return $false
+            }
         }
         # Fedora "Linux 5.11.22-100.fc32.x86_64 #1 SMP Wed May 19 18:58:25 UTC 2021"
         "(?im)^Linux.*\.fc(?<Major>[\d]+)\..*$"  {
-            Write-Verbose "OS is Fedora"
+            Write-Debug "Fedora: '$OSDescription'"
             [int]$fedoraVersion = $Matches["Major"]
-            Write-Verbose "Fedora ${fedoraVersion}"
+            Write-Debug "Fedora ${fedoraVersion}"
 
-            return ($fedoraVersion -ge 33)
+            if ($fedoraVersion -ge 33) {
+                Write-Debug "Supported Fedora version: ${fedoraVersion}"
+                return $true
+            } else {
+                Write-Verbose "Unsupported Fedora version: ${fedoraVersion}"
+                return $false
+            }
         }
         # Red Hat / CentOS "Linux 4.18.0-425.3.1.el8.x86_64 #1 SMP Fri Sep 30 11:45:06 EDT 2022"
         "(?im)^Linux.*\.el(?<Major>[\d]+).*$"  {
-            Write-Verbose "OS is Red Hat"
-            $majorVersion = $Matches["Major"]
-            Write-Verbose "Red Hat ${majorVersion}"
+            Write-Debug "Red Hat / CentOS / Oracle Linux: '$OSDescription'"
+            [int]$majorVersion = $Matches["Major"]
+            Write-Debug "Red Hat ${majorVersion}"
 
-            return ($majorVersion -ge 7)
+            if ($majorVersion -ge 7) {
+                Write-Debug "Supported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
+                return $true
+            } else {
+                Write-Verbose "Unsupported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
+                return $false
+            }
         }
         # Ubuntu "Linux 4.15.0-1113-azure #126~16.04.1-Ubuntu SMP Tue Apr 13 16:55:24 UTC 2021"
         "(?im)^Linux.*[^\d]+((?<Major>[\d]+)((\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)))(\.(?<Revision>[\d]+))?)-Ubuntu.*$"  {
-            Write-Verbose "OS is Ubuntu"
+            Write-Debug "Ubuntu: '$OSDescription'"
             [int]$majorVersion = $Matches["Major"]
-            Write-Verbose "Ubuntu ${majorVersion}"
+            Write-Debug "Ubuntu ${majorVersion}"
 
             if ($majorVersion -lt 16) {
+                Write-Verbose "Unsupported Ubuntu version: ${majorVersion}"
                 return $false
             }
             if (($majorVersion % 2) -ne 0) {
+                Write-Verbose "non-LTS Ubuntu version: ${majorVersion}"
                 return $null
             }
+            Write-Debug "Supported Ubuntu version: ${majorVersion}"
             return $true
         }
         # Ubuntu "Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:32 UTC 2015"
         # Ubuntu 22 "Linux 5.15.0-1023-azure #29-Ubuntu SMP Wed Oct 19 22:37:08 UTC 2022 x86_64 x86_64 x86_64 GNU/Linux"
         "(?im)^Linux (?<KernelMajor>[\d]+)(\.(?<KernelMinor>[\d]+)).*-Ubuntu.*$" {
-            Write-Verbose "OS is Ubuntu, no version declared"
+            Write-Debug "Ubuntu (no version declared): '$OSDescription'"
             [version]$kernelVersion = ("{0}.{1}" -f $Matches["KernelMajor"],$Matches["KernelMinor"])
-            Write-Verbose "Ubuntu Linux Kernel $($kernelVersion.ToString())"
-            [version]$minKernelVersion = '4.4' 
+            Write-Debug "Ubuntu Linux Kernel $($kernelVersion.ToString())"
+            [version]$minKernelVersion = '4.4' # https://ubuntu.com/kernel/lifecycle
 
             if ($kernelVersion -lt $minKernelVersion ) {
+                Write-Verbose "Unsupported Ubuntu Linux kernel version: ${kernelVersion} (see https://ubuntu.com/kernel/lifecycle)"
                 return $false
             }
+            Write-Verbose "Unknown Ubuntu version: '$OSDescription'"
             return $null
         }
         # macOS "Darwin 17.6.0 Darwin Kernel Version 17.6.0: Tue May  8 15:22:16 PDT 2018; root:xnu-4570.61.1~1/RELEASE_X86_64"
         "(?im)^Darwin (?<DarwinMajor>[\d]+)(\.(?<DarwinMinor>[\d]+)).*$" {
-            Write-Verbose "OS is Darwin"
+            Write-Debug "macOS (Darwin): '$OSDescription'"
             [version]$darwinVersion = ("{0}.{1}" -f $Matches["DarwinMajor"],$Matches["DarwinMinor"])
-            Write-Verbose "Darwin $($darwinVersion.ToString())"
+            Write-Debug "Darwin $($darwinVersion.ToString())"
             [version]$minDarwinVersion = '19.0' 
 
-            return ($darwinVersion -ge $minDarwinVersion)
+            if ($darwinVersion -ge $minDarwinVersion) {
+                Write-Debug "Supported Darwin (macOS) version: ${darwinVersion}"
+                return $true
+            } else {
+                Write-Verbose "Unsupported Darwin (macOS) version): ${darwinVersion} (see https://en.wikipedia.org/wiki/Darwin_(operating_system)"
+                return $false
+            }
         }
         # Windows 10 / Server 2016+ "Microsoft Windows 10.0.20348"
         "(?im)^Microsoft Windows (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$"  {
@@ -158,52 +191,67 @@ function Validate-OS (
             [int]$windowsMinorVersion = $Matches["Minor"]
             [int]$windowsBuild = $Matches["Build"]
             [version]$windowsVersion = ("{0}.{1}.{2}" -f $Matches["Major"],$Matches["Minor"],$Matches["Build"])
-            Write-Verbose "OS is Windows"
-            Write-Verbose "Windows $($windowsVersion.ToString())"
+            Write-Debug "Windows: '$OSDescription'"
+            Write-Debug "Windows $($windowsVersion.ToString())"
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 1)) {
                 # Windows 7
-                return ($windowsBuild -ge 7601)
+                if ($windowsBuild -ge 7601) {
+                    Write-Debug "Supported Windows 7 build: ${windowsVersion}"
+                    return $true
+                } else {
+                    Write-Verbose "Unsupported Windows 7 build: ${windowsVersion}"
+                    return $false
+                }
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 2)) {
                 # Windows 8 / Windows Server 2012 R1
+                Write-Verbose "Windows 8 is not supported: ${windowsVersion}"
                 return $false
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 3)) {
                 # Windows 8.1 / Windows Server 2012 R2
+                Write-Debug "Supported Windows 8.1 version: ${windowsVersion}"
                 return $true
             }
             if ($windowsMajorVersion -eq 10) {
                 # Windows 10 / Windows Server 2016+
-                return ($windowsBuild -ge 14393)
+                if ($windowsBuild -ge 14393) {
+                    Write-Debug "Supported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
+                    return $true
+                } else {
+                    Write-Verbose "Unsupported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
+                    return $false
+                }
             }
+            Write-Verbose "Unknown Windows version: '${OSDescription}'"
             return $null
         }
         default {
-            Write-Verbose "'$OS' is not a recognized OS format, skipping"
+            Write-Verbose "Unknown operating system: '$OSDescription'"
             return $null
         }
     }
 }
 
+if (!$OS -and !$OrganizationUrl) {
+    Get-Help $MyInvocation.MyCommand.Definition
+    return
+}
+
 if ($OS) {
-    # Process OS headers passed as input
+    # Process OS parameter set
     $OS | ForEach-Object {
         New-Object PSObject -Property @{
             OS = $_
         } | Set-Variable agent
         Classify-OS -AgentOS $_ -Agent $agent
         Write-Output $agent
-    } | Set-Variable agents
+    } | Filter-Agents | Format-Table -Property OS, OSComment
 
-    $agents | Filter-Agents | Format-Table -Property OS, OSComment
-
-    exit
+    return
 }
 
-# Gather data from Azure DevOps, proceed to validate arguments required
-$apiVersion = "7.1-preview"
-
-# Validation & Parameter processing
+# Process pool parameter set
 if (!$OrganizationUrl) {
     Write-Warning "OrganizationUrl is required. Please specify -OrganizationUrl or set the AZDO_ORG_SERVICE_URL environment variable."
     exit 1
