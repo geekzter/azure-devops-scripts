@@ -282,7 +282,7 @@ if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
     az extension add -n azure-devops -y
 }
 
-Write-Host "$($PSStyle.Formatting.FormatAccent)This script will process all self-hosted pools in organization '${OrganizationUrl}' to:$($PSStyle.Reset)"
+Write-Host "`n$($PSStyle.Formatting.FormatAccent)This script will process all self-hosted pools in organization '${OrganizationUrl}' to:$($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}' (list repeated at the end of script output) $($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list$($PSStyle.Reset)"
 
