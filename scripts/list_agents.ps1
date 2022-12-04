@@ -48,18 +48,23 @@ param (
 ) 
 
 function Classify-OS (
-    [parameter(Mandatory=$true)][string]$AgentOS,
+    [parameter(Mandatory=$false)][string]$AgentOS,
     [parameter(Mandatory=$true)][psobject]$Agent
 ) {
-    $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
-    $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
-    if ($v3AgentSupportsOS -eq $null) {
-        $osComment = "$($PSStyle.Formatting.Warning)OS (version) unknown, v2 agent won't upgrade to v3 automatically$($PSStyle.Reset)"
-    } elseif ($v3AgentSupportsOS) {
-        $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
+    Write-Debug "AgentOS: ${AgentOS}"
+    if ($AgentOS) {
+        $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
+        if ($v3AgentSupportsOS -eq $null) {
+            $osComment = "$($PSStyle.Formatting.Warning)OS (version) unknown, v2 agent won't upgrade to v3 automatically$($PSStyle.Reset)"
+        } elseif ($v3AgentSupportsOS) {
+            $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
+        } else {
+            $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent, v2 agent won't upgrade to v3$($PSStyle.Reset)"
+        }
     } else {
-        $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent, v2 agent won't upgrade to v3$($PSStyle.Reset)"
+        $osComment = "$($PSStyle.Formatting.Warning)OS description missing$($PSStyle.Reset)"
     }
+    $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
     $Agent | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
 }
 
@@ -186,7 +191,7 @@ function Validate-OS (
             }
         }
         # Windows 10 / Server 2016+ "Microsoft Windows 10.0.20348"
-        "(?im)^Microsoft Windows (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$"  {
+        "(?im)^(Microsoft Windows|Windows_NT) (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$"  {
             [int]$windowsMajorVersion = $Matches["Major"]
             [int]$windowsMinorVersion = $Matches["Minor"]
             [int]$windowsBuild = $Matches["Build"]
@@ -246,7 +251,9 @@ if ($OS) {
         } | Set-Variable agent
         Classify-OS -AgentOS $_ -Agent $agent
         Write-Output $agent
-    } | Filter-Agents | Format-Table -Property OS, OSComment
+    } | Filter-Agents `
+      | Format-Table -Property OS, OSComment `
+      | Out-Host -Paging
 
     return
 }
@@ -282,6 +289,7 @@ if (!$PoolId) {
 }
 
 foreach ($individualPoolId in $PoolId) {
+    $agents = $null
     $poolUrl = ("{0}/_settings/agentpools?poolId={1}" -f $OrganizationUrl,$individualPoolId)
     Write-Verbose "Retrieving pool with id '${individualPoolId}' in (${OrganizationUrl})..."
     az pipelines pool show --id $individualPoolId `
@@ -290,21 +298,40 @@ foreach ($individualPoolId in $PoolId) {
                            | Set-Variable poolName
     
     Write-Host "Retrieving agents for pool '${poolName}' (${poolUrl})..."
+    # az pipelines agent list --pool-id $individualPoolId `
+    #                         --include-capabilities `
+    #                         --query "[?!starts_with(version,'3.')]" `
+    #                         -o json 
+    # exit
+
     az pipelines agent list --pool-id $individualPoolId `
                             --include-capabilities `
                             --query "[?!starts_with(version,'3.')]" `
                             -o json `
                             | ConvertFrom-Json `
                             | Set-Variable agents
-    $agents | ForEach-Object {
-        Classify-OS -AgentOS $_.osDescription -Agent $_
-        $agentUrl = "{0}/_settings/agentpools?agentId={2}&poolId={1}" -f $OrganizationUrl,$individualPoolId,$_.id
-        $_ | Add-Member -NotePropertyName AgentUrl -NotePropertyValue $agentUrl
-    } 
-    if (!$All) {
-        $agents | Where-Object -Property V3AgentSupportsOS -ne $true | Set-Variable agents
+    if ($agents) {
+        $agents | ForEach-Object {
+            $osConsolidated = $_.osDescription
+            $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
+            if ($capabilityOSDescription -and !$osConsolidated) {
+                $osConsolidated = $capabilityOSDescription
+            }
+            Write-Debug "osConsolidated: ${osConsolidated}"
+            Write-Debug "capabilityOSDescription: ${capabilityOSDescription}"
+            Classify-OS -AgentOS $osConsolidated -Agent $_
+            $agentUrl = "{0}/_settings/agentpools?agentId={2}&poolId={1}" -f $OrganizationUrl,$individualPoolId,$_.id
+            $_ | Add-Member -NotePropertyName AgentUrl -NotePropertyValue $agentUrl
+            $_ | Add-Member -NotePropertyName OS -NotePropertyValue $osConsolidated
+        } 
+        $agents | Filter-Agents `
+                | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
+                                         @{Label="Status"; Expression={$_.status}},`
+                                         OS,`
+                                         OSComment,`
+                                         AgentUrl `
+                | Out-Host -Paging
+    } else {
+        Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
     }
-    $agents | Filter-Agents | Format-Table -Property name, osDescription, OSComment, AgentUrl
-
-    exit
 }
