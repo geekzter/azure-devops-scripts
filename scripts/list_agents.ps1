@@ -60,11 +60,14 @@ function Classify-OS (
     if ($AgentOS) {
         $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
         if ($v3AgentSupportsOS -eq $null) {
-            $osComment = "$($PSStyle.Formatting.Warning)OS (version) unknown, v2 agent won't upgrade to v3 automatically$($PSStyle.Reset)"
+            $osComment = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
+            # $osComment = "$($PSStyle.Formatting.Warning)OS (version) unknown, v2 agent won't upgrade to v3 automatically$($PSStyle.Reset)"
         } elseif ($v3AgentSupportsOS) {
             $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
+            # $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
         } else {
-            $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent, v2 agent won't upgrade to v3$($PSStyle.Reset)"
+            $osComment = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
+            # $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent, v2 agent won't upgrade to v3$($PSStyle.Reset)"
         }
     } else {
         $osComment = "$($PSStyle.Formatting.Warning)OS description missing$($PSStyle.Reset)"
@@ -321,6 +324,7 @@ $script:allAgents = [System.Collections.ArrayList]@()
 try {
     $poolIndex = 0;
     $totalNumberOfAgents = 0;
+    $numberOfPoolsToProcess = [math]::min($MaxPools,$totalNumberOfPools)
     foreach ($individualPoolId in $PoolId) {
         $poolIndex++
         if ($poolIndex -gt $MaxPools) {
@@ -329,7 +333,7 @@ try {
         $OuterLoopProgressParameters = @{
             ID               = 0
             Activity         = "Processing pools"
-            Status           = "Pool ${poolIndex} of ${totalNumberOfPools}"
+            Status           = "Pool ${poolIndex} of ${numberOfPoolsToProcess}"
             PercentComplete  =  ($poolIndex / $totalNumberOfPools) * 100
             CurrentOperation = 'OuterLoop'
         }
@@ -357,15 +361,7 @@ try {
             $agentIndex = 0
             $agents | ForEach-Object {
                 $agentIndex++
-                $totalNumberOfAgents++
-                # $InnerLoopProgressParameters = @{
-                #     ID               = 1
-                #     Activity         = "Processing agents"
-                #     Status           = "Agent ${agentIndex} of ${totalNumberOfAgentsInPool} in pool ${poolIndex}"
-                #     PercentComplete  = ($agentIndex / $totalNumberOfAgentsInPool) * 100
-                #     CurrentOperation = 'InnerLoop'
-                # }
-                # Write-Progress @InnerLoopProgressParameters                
+                $totalNumberOfAgents++          
                 $osConsolidated = $_.osDescription
                 $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
                 if ($capabilityOSDescription -and !$osConsolidated) {
@@ -412,6 +408,7 @@ try {
     $script:allAgents | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
                                                 OS,`
                                                 OSComment,`
+                                                V3AgentSupportsOS,`
                                                 PoolName,`
                                                 AgentUrl `
                       | Export-Csv -Path $exportFilePath
@@ -423,6 +420,7 @@ try {
                                                    @{Label="Status"; Expression={$_.status}},`
                                                    OS,`
                                                    OSComment,`
+                                                   V3AgentSupportsOS,`
                                                    PoolName,`
                                                    AgentUrl `
                           | Out-Host -Paging
