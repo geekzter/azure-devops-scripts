@@ -428,14 +428,14 @@ try {
                         } `
                       | Set-Variable allAgents -Scope script
 
-    $script:allAgents | Filter-Agents `
-                      | Sort-Object -Property @{Expression = "V3AgentSupportsOS"; Descending = $true}, `
+    $script:allAgents | Sort-Object -Property @{Expression = "V3AgentSupportsOS"; Descending = $true}, `
                                               @{Expression = "PoolName"; Descending = $false}, `
                                               @{Expression = "name"; Descending = $false} `
                       | Set-Variable allAgents -Scope script
     
     $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
-    $script:allAgents | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
+    $script:allAgents | Filter-Agents `
+                      | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
                                                 @{Label="OS"; Expression={$_.OS -replace ";",""}},`
                                                 OSComment,`
                                                 @{Label="V3OS"; Expression={$_.V3AgentSupportsOSTextValue}},`
@@ -449,7 +449,8 @@ try {
     try {
         # Try block, in case the user cancels paging through results
         Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
-        $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
+        $script:allAgents | Filter-Agents `
+                          | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                                                    @{Label="Status"; Expression={$_.status}},`
                                                    OS,`
                                                    @{Label="OSComment"; Expression={
@@ -475,7 +476,9 @@ try {
             Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
             Write-Host "`nAgents by v2 -> v3 compatibility:"
             $script:allAgents | Group-Object -Property V3AgentSupportsOSTextValue `
-                              | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}}, Count
+                              | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}},`
+                                                       Count,`
+                                                       @{Label="Percentage"; Expression={($_.Count / $totalNumberOfAgents).ToString("p")}}
     
         }    
     }                    
