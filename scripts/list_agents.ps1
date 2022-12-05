@@ -328,9 +328,10 @@ try {
                                | Set-Variable poolName
         
         Write-Host "Retrieving v2 agents for pool '${poolName}' (${poolUrl})..."
+        Write-Debug "az pipelines agent list --pool-id ${individualPoolId} --include-capabilities --query `"[?starts_with(version,'2.') ]`""
         az pipelines agent list --pool-id $individualPoolId `
                                 --include-capabilities `
-                                --query "[?starts_with(version,'2.')]" `
+                                --query "[?starts_with(version,'2.') ]" `
                                 -o json `
                                 | ConvertFrom-Json `
                                 | Set-Variable agents
@@ -342,14 +343,14 @@ try {
             $agents | ForEach-Object {
                 $agentIndex++
                 $totalNumberOfAgents++
-                $InnerLoopProgressParameters = @{
-                    ID               = 1
-                    Activity         = "Processing agents"
-                    Status           = "Agent ${agentIndex} of ${totalNumberOfAgentsInPool} in pool ${poolIndex}"
-                    PercentComplete  = ($agentIndex / $totalNumberOfAgentsInPool) * 100
-                    CurrentOperation = 'InnerLoop'
-                }
-                Write-Progress @InnerLoopProgressParameters                
+                # $InnerLoopProgressParameters = @{
+                #     ID               = 1
+                #     Activity         = "Processing agents"
+                #     Status           = "Agent ${agentIndex} of ${totalNumberOfAgentsInPool} in pool ${poolIndex}"
+                #     PercentComplete  = ($agentIndex / $totalNumberOfAgentsInPool) * 100
+                #     CurrentOperation = 'InnerLoop'
+                # }
+                # Write-Progress @InnerLoopProgressParameters                
                 $osConsolidated = $_.osDescription
                 $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
                 if ($capabilityOSDescription -and !$osConsolidated) {
@@ -375,11 +376,10 @@ try {
             Write-Host "There are no agents in pool '${poolName}' (${poolUrl})"
         }
     }
+} finally {
     Write-Progress Id 0 -Completed
     Write-Progress Id 1 -Completed
-} catch {
-    Write-Host "`nInterrupted, creating summary..."
-} finally {
+
     # Flatten nested arrays 
     $script:allAgents | ForEach-Object {
                             $_ 
@@ -415,11 +415,13 @@ try {
     } catch [System.Management.Automation.HaltCommandException] {
         Write-Warning "Skipped paging through results" 
     } finally {
-        Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
-        Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
-        Write-Host "Agents by v2 -> v3 compatibility:"
-        $script:allAgents | Group-Object -Property V3AgentSupportsOS `
-                          | Select-Object -Property Count,Name
+        if ($script:allAgents) {
+            Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
+            Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
+            Write-Host "`nAgents by v2 -> v3 compatibility:"
+            $script:allAgents | Group-Object -Property V3AgentSupportsOS `
+                              | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}}, Count
     
+        }    
     }                    
 }
