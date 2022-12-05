@@ -377,9 +377,9 @@ try {
     }
     Write-Progress Id 0 -Completed
     Write-Progress Id 1 -Completed
-} finally {
+} catch {
     Write-Host "`nInterrupted, creating summary..."
-
+} finally {
     # Flatten nested arrays 
     $script:allAgents | ForEach-Object {
                             $_ 
@@ -413,7 +413,7 @@ try {
                           | Out-Host -Paging
     
     } catch [System.Management.Automation.HaltCommandException] {
-        Write-Host "Skipped paging through results" 
+        Write-Warning "Skipped paging through results" 
     } finally {
         Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
         Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
