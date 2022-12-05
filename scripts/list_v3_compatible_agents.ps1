@@ -12,12 +12,12 @@
     This script requires a PAT token with read access on 'Agent Pools' scope.
 
     For more information, go to https://aka.ms/azdo-pipeline-agent-version.
-.EXAMPLE
-    ./list_agents.ps1 -Token "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 .EXAMPLE
+    ./list_agents.ps1 -Token "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+.EXAMPLE
     $env:AZURE_DEVOPS_EXT_PAT = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    ./list_agents.ps1 -PoolId 1234 -Filter V3InCompatible -Verbose
+    ./list_agents.ps1 -PoolId 1234 -Filter V3InCompatible -Verbose -OpenCsv
 #> 
 
 #Requires -Version 7.2
@@ -463,7 +463,6 @@ try {
                                                     }                                                    
                                                     }},`
                                                    @{Label="V3OS"; Expression={$_.V3AgentSupportsOSTextValue}},`
-                                                   V3AgentSupportsOS,`
                                                    PoolName,`
                                                    AgentUrl `
                           | Out-Host -Paging
