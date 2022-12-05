@@ -283,9 +283,24 @@ if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
 }
 
 Write-Host "`n$($PSStyle.Formatting.FormatAccent)This script will process all self-hosted pools in organization '${OrganizationUrl}' to:$($PSStyle.Reset)"
-Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}' (list repeated at the end of script output) $($PSStyle.Reset)"
-Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list$($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}'$($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list (so you can walk away from the computer when this runs)$($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)- Show list of agents filtered by '${Filter}' (list repeated at the end of script output)$($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)Note the Pipeline agent has more context about the operating system of the host it is running on (e.g. 'lsb_release -a' output), and is able to make a better informed decision on whether to upgrade or not.$($PSStyle.Reset)"
+# Prompt to continue
+$choices = @(
+    [System.Management.Automation.Host.ChoiceDescription]::new("&Continue", "Process pools")
+    [System.Management.Automation.Host.ChoiceDescription]::new("&Exit", "Abort")
+)
+$defaultChoice = 0
+$decision = $Host.UI.PromptForChoice("Continue", "Do you wish to proceed retrieving data for agents in all pools in '${OrganizationUrl}'?", $choices, $defaultChoice)
+
+if ($decision -eq 0) {
+    Write-Host "$($choices[$decision].HelpMessage)"
+} else {
+    Write-Host "$($PSStyle.Formatting.Warning)$($choices[$decision].HelpMessage)$($PSStyle.Reset)"
+    exit                    
+}
 
 Write-Host "`nAuthenticating to organization ${OrganizationUrl}..."
 $Token | az devops login --organization $OrganizationUrl
