@@ -6,7 +6,7 @@
 .DESCRIPTION 
     Azure Pipeline agent v2 uses .NET 3.1 Core, while agent v3 runs on .NET 6. This means agent v3 will drop support for operating systems not supported by .NET 6 (https://github.com/dotnet/core/blob/main/release-notes/6.0/supported-os.md)
     This script will try to predict whether an agent will be able to upgrade, using the osDescription attribute of the agent. For Linux and macOS, this contains the output of 'uname -a`.
-    Note the Pipeline agent has more context about the operating system of the host it is running un (e.g. 'lsb_release -a' output), and is able to make a better informed decision on whether to upgrade or not.
+    Note the Pipeline agent has more context about the operating system of the host it is running on (e.g. 'lsb_release -a' output), and is able to make a better informed decision on whether to upgrade or not.
     Hence the output of this script is an indication wrt what the agent will do, but will include results where there is no sufficient information to include a prediction.
 
     This script requires a PAT token with read access on 'Agent Pools' scope.
@@ -285,8 +285,9 @@ if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
 Write-Host "`n$($PSStyle.Formatting.FormatAccent)This script will process all self-hosted pools in organization '${OrganizationUrl}' to:$($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of agents filtered by '${Filter}' (list repeated at the end of script output) $($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list$($PSStyle.Reset)"
+Write-Host "$($PSStyle.Formatting.FormatAccent)Note the Pipeline agent has more context about the operating system of the host it is running on (e.g. 'lsb_release -a' output), and is able to make a better informed decision on whether to upgrade or not.$($PSStyle.Reset)"
 
-Write-Host "Authenticating to organization ${OrganizationUrl}..."
+Write-Host "`nAuthenticating to organization ${OrganizationUrl}..."
 $Token | az devops login --organization $OrganizationUrl
 az devops configure --defaults organization=$OrganizationUrl
 
@@ -378,7 +379,6 @@ try {
     Write-Progress Id 1 -Completed
 } finally {
     Write-Host "`nInterrupted, creating summary..."
-    Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
 
     # Flatten nested arrays 
     $script:allAgents | ForEach-Object {
@@ -386,10 +386,6 @@ try {
                         } `
                       | Set-Variable allAgents -Scope script `
                       | Set-Variable data -Scope global
-
-    Write-Host "Agents by v2 -> v3 compatibility:"
-    $script:allAgents | Group-Object -Property V3AgentSupportsOS `
-                      | Select-Object -Property Count,Name
 
     $script:allAgents | Filter-Agents `
                       | Sort-Object -Property @{Expression = "V3AgentSupportsOS"; Descending = $true}, `
@@ -405,14 +401,25 @@ try {
                                                 AgentUrl `
                       | Export-Csv -Path $exportFilePath
 
-    Write-Host "Retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
-    $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
-                                               @{Label="Status"; Expression={$_.status}},`
-                                               OS,`
-                                               OSComment,`
-                                               PoolName,`
-                                               AgentUrl `
-                      | Out-Host -Paging
-                    
-    Write-Host "Retrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"                    
+    try {
+        # Try block, in case the user cancels paging through results
+        Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
+        $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
+                                                   @{Label="Status"; Expression={$_.status}},`
+                                                   OS,`
+                                                   OSComment,`
+                                                   PoolName,`
+                                                   AgentUrl `
+                          | Out-Host -Paging
+    
+    } catch [System.Management.Automation.HaltCommandException] {
+        Write-Host "Skipped paging through results" 
+    } finally {
+        Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
+        Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
+        Write-Host "Agents by v2 -> v3 compatibility:"
+        $script:allAgents | Group-Object -Property V3AgentSupportsOS `
+                          | Select-Object -Property Count,Name
+    
+    }                    
 }
