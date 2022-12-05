@@ -49,7 +49,15 @@ param (
     [parameter(ParameterSetName="os")]
     [ValidateSet("V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible", "All")]
     [string]
-    $Filter="V3CompatibilityIssues"
+    $Filter="V3CompatibilityIssues",
+
+    [parameter(Mandatory=$false)]
+    [switch]
+    $OpenCsv=$false,
+
+    [parameter(Mandatory=$false,HelpMessage="Do not ask for input to starty processing",ParameterSetName="pool")]
+    [switch]
+    $Force=$false
 ) 
 
 function Classify-OS (
@@ -61,16 +69,13 @@ function Classify-OS (
         $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
         if ($v3AgentSupportsOS -eq $null) {
             $osComment = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
-            # $osComment = "$($PSStyle.Formatting.Warning)OS (version) unknown, v2 agent won't upgrade to v3 automatically$($PSStyle.Reset)"
         } elseif ($v3AgentSupportsOS) {
             $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
-            # $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
         } else {
             $osComment = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
-            # $osComment = "$($PSStyle.Formatting.Error)OS not supported by v3 agent, v2 agent won't upgrade to v3$($PSStyle.Reset)"
         }
     } else {
-        $osComment = "$($PSStyle.Formatting.Warning)OS description missing$($PSStyle.Reset)"
+        $osComment = "OS description missing"
     }
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
     $Agent | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
@@ -100,6 +105,19 @@ function Filter-Agents (
                 $Agents
             }
         }    
+    }
+}
+
+function Open-Document (
+    [parameter(Mandatory=$true)][string]$Document
+) {
+    if ($IsMacOS) {
+        open $Document
+        return
+    }
+    if ($IsWindows) {
+        start $Document
+        return
     }
 }
 
@@ -290,19 +308,21 @@ Write-Host "$($PSStyle.Formatting.FormatAccent)- Create an aggregated list of ag
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Create a CSV export of that list (so you can walk away from the computer when this runs)$($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)- Show list of agents filtered by '${Filter}' (list repeated at the end of script output)$($PSStyle.Reset)"
 Write-Host "$($PSStyle.Formatting.FormatAccent)Note the Pipeline agent has more context about the operating system of the host it is running on (e.g. 'lsb_release -a' output), and is able to make a better informed decision on whether to upgrade or not.$($PSStyle.Reset)"
-# Prompt to continue
-$choices = @(
-    [System.Management.Automation.Host.ChoiceDescription]::new("&Continue", "Process pools")
-    [System.Management.Automation.Host.ChoiceDescription]::new("&Exit", "Abort")
-)
-$defaultChoice = 0
-$decision = $Host.UI.PromptForChoice("Continue", "Do you wish to proceed retrieving data for agents in all pools in '${OrganizationUrl}'?", $choices, $defaultChoice)
+if (!$Force) {
+    # Prompt to continue
+    $choices = @(
+        [System.Management.Automation.Host.ChoiceDescription]::new("&Continue", "Process pools")
+        [System.Management.Automation.Host.ChoiceDescription]::new("&Exit", "Abort")
+    )
+    $defaultChoice = 0
+    $decision = $Host.UI.PromptForChoice("Continue", "Do you wish to proceed retrieving data for agents in all pools in '${OrganizationUrl}'?", $choices, $defaultChoice)
 
-if ($decision -eq 0) {
-    Write-Host "$($choices[$decision].HelpMessage)"
-} else {
-    Write-Host "$($PSStyle.Formatting.Warning)$($choices[$decision].HelpMessage)$($PSStyle.Reset)"
-    exit                    
+    if ($decision -eq 0) {
+        Write-Host "$($choices[$decision].HelpMessage)"
+    } else {
+        Write-Host "$($PSStyle.Formatting.Warning)$($choices[$decision].HelpMessage)$($PSStyle.Reset)"
+        exit                    
+    }
 }
 
 Write-Host "`nAuthenticating to organization ${OrganizationUrl}..."
@@ -391,12 +411,22 @@ try {
     Write-Progress Id 0 -Completed
     Write-Progress Id 1 -Completed
 
-    # Flatten nested arrays 
-    $script:allAgents | ForEach-Object {
+    
+    $script:allAgents | ForEach-Object { # Flatten nested arrays
                             $_ 
                         } `
-                      | Set-Variable allAgents -Scope script `
-                      | Set-Variable data -Scope global
+                      | ForEach-Object { # Populate implicit values
+                            if ($_.V3AgentSupportsOS -eq $null) {
+                                $v3AgentSupportsOSTextValue = "Unknown"
+                            } elseif ($_.V3AgentSupportsOS) {
+                                $v3AgentSupportsOSTextValue = "Yes"
+                            } else {
+                                $v3AgentSupportsOSTextValue = "No"
+                            }
+                            $_ | Add-Member -NotePropertyName V3AgentSupportsOSTextValue -NotePropertyValue $v3AgentSupportsOSTextValue
+                            $_ 
+                        } `
+                      | Set-Variable allAgents -Scope script
 
     $script:allAgents | Filter-Agents `
                       | Sort-Object -Property @{Expression = "V3AgentSupportsOS"; Descending = $true}, `
@@ -406,12 +436,15 @@ try {
     
     $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
     $script:allAgents | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
-                                                OS,`
+                                                @{Label="OS"; Expression={$_.OS -replace ";",""}},`
                                                 OSComment,`
-                                                V3AgentSupportsOS,`
+                                                @{Label="V3OS"; Expression={$_.V3AgentSupportsOSTextValue}},`
                                                 PoolName,`
                                                 AgentUrl `
                       | Export-Csv -Path $exportFilePath
+    if ($OpenCsv) {
+        Open-Document -Document $exportFilePath
+    }
 
     try {
         # Try block, in case the user cancels paging through results
@@ -419,7 +452,16 @@ try {
         $script:allAgents | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                                                    @{Label="Status"; Expression={$_.status}},`
                                                    OS,`
-                                                   OSComment,`
+                                                   @{Label="OSComment"; Expression={
+                                                    if ($_.V3AgentSupportsOS -eq $null) {
+                                                        "$($PSStyle.Formatting.Warning)$($_.OSComment)$($PSStyle.Reset)"
+                                                    } elseif ($_.V3AgentSupportsOS) {
+                                                        $_.OSComment
+                                                    } else {
+                                                        "$($PSStyle.Formatting.Error)$($_.OSComment)$($PSStyle.Reset)"
+                                                    }                                                    
+                                                    }},`
+                                                   @{Label="V3OS"; Expression={$_.V3AgentSupportsOSTextValue}},`
                                                    V3AgentSupportsOS,`
                                                    PoolName,`
                                                    AgentUrl `
@@ -432,7 +474,7 @@ try {
             Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
             Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
             Write-Host "`nAgents by v2 -> v3 compatibility:"
-            $script:allAgents | Group-Object -Property V3AgentSupportsOS `
+            $script:allAgents | Group-Object -Property V3AgentSupportsOSTextValue `
                               | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}}, Count
     
         }    
