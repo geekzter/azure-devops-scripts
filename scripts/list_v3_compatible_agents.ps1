@@ -47,7 +47,7 @@ param (
     [parameter(Mandatory=$false)]
     [parameter(ParameterSetName="pool")]
     [parameter(ParameterSetName="os")]
-    [ValidateSet("V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible", "All")]
+    [ValidateSet("All", "MissingOS", "V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible")]
     [string]
     $Filter="V3CompatibilityIssues",
 
@@ -60,16 +60,64 @@ param (
     $Force=$false
 ) 
 
+class ClassificationResult {
+    hidden [string]$_upgradeStatement
+    [ValidateSet($null, $true, $false)]
+    hidden [object]$_v3AgentSupportsOS
+    hidden [string]$_v3AgentSupportsOSText
+    [string]$_reason
+
+    ClassificationResult() {
+        $this | Add-Member -Name Reason -MemberType ScriptProperty -Value {
+            # Get
+            return $this._reason
+        } -SecondValue {
+            # Set
+            param($value)
+            $this._reason = $value
+            Write-Debug "ClassificationResult.Reason = ${value}"
+        }
+        $this | Add-Member -Name UpgradeStatement -MemberType ScriptProperty -Value {
+            return $this._upgradeStatement
+        }
+        $this | Add-Member -Name V3AgentSupportsOS -MemberType ScriptProperty -Value {
+            # Get
+            return $this._v3AgentSupportsOS
+        } -SecondValue {
+            # Set
+            param($value)
+
+            $this._v3AgentSupportsOS = $value
+            if ($value -eq $null) {
+                $this._v3AgentSupportsOSText = = "Unknown"
+                $this._upgradeStatement = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
+            } elseif ($value) {
+                $this._v3AgentSupportsOSText = "Yes"
+                $this._upgradeStatement = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
+            } else {
+                $this._v3AgentSupportsOSText = "No"
+                $this._upgradeStatement = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
+            }
+        }
+        $this | Add-Member -Name V3AgentSupportsOSText -MemberType ScriptProperty -Value {
+            return $this._v3AgentSupportsOSText 
+        }
+    }
+}
+
+# [OutputType([ClassificationResult])]
 function Classify-OS (
     [parameter(Mandatory=$false)][string]$AgentOS,
     [parameter(Mandatory=$true)][psobject]$Agent
 ) {
     Write-Debug "AgentOS: ${AgentOS}"
+    $result = [ClassificationResult]::new()
     if ($AgentOS) {
-        $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
-        if ($v3AgentSupportsOS -eq $null) {
+        # $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
+        $result = Validate-OS -OSDescription $AgentOS
+        if ($result.V3AgentSupportsOS -eq $null) {
             $osComment = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
-        } elseif ($v3AgentSupportsOS) {
+        } elseif ($result.V3AgentSupportsOS) {
             $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
         } else {
             $osComment = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
@@ -77,6 +125,7 @@ function Classify-OS (
     } else {
         $osComment = "OS description missing"
     }
+    $Agent | Add-Member -NotePropertyName ValidationResult -NotePropertyValue $result
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
     $Agent | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
 }
@@ -93,10 +142,13 @@ function Filter-Agents (
                 $Agents | Where-Object -Property V3AgentSupportsOS -ne $true
             } 
             "V3CompatibilityUnknown" {
-                $Agents | Where-Object -Property V3AgentSupportsOS -eq $null
+                $Agents | Where-Object -Property V3AgentSupportsOS -eq $null | Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
             } 
             "V3InCompatible" {
                 $Agents | Where-Object -Property V3AgentSupportsOS -eq $false
+            } 
+            "MissingOS" {
+                $Agents | Where-Object -Property OS -eq $null
             } 
             "All" {
                 $Agents
@@ -121,70 +173,74 @@ function Open-Document (
     }
 }
 
-function Validate-OS (
-    [parameter(Mandatory=$true)][string]$OSDescription
-) {
+function Validate-OS {
+    [OutputType([ClassificationResult])]
+    param (
+        [parameter(Mandatory=$true)][string]$OSDescription
+    )
+
+    $result = [ClassificationResult]::new()
+
     # Parse operating system header
     switch -regex ($OSDescription) {
         # Debian "Linux 4.9.0-16-amd64 #1 SMP Debian 4.9.272-2 (2021-07-19)"
-        "(?im)^Linux.* Debian (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+))?.*$"  {
+        "(?im)^Linux.* Debian (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+))?.*$" {
             Write-Debug "Debian: '$OSDescription'"
             [version]$kernelVersion = ("{0}.{1}" -f $Matches["Major"],$Matches["Minor"])
             Write-Debug "Debian Linux Kernel $($kernelVersion.ToString())"
             [version]$minKernelVersion = '4.19' # https://wiki.debian.org/DebianBuster 
 
             if ($kernelVersion -ge $minKernelVersion) {
-                Write-Debug "Supported Debian Linux kernel version: ${kernelVersion}"
-                return $true
+                $result.Reason = "Supported Debian Linux kernel version: ${kernelVersion}"
+                $result.V3AgentSupportsOS = $true
             } else {
-                Write-Verbose "Unsupported Debian Linux kernel version: ${kernelVersion} (see https://wiki.debian.org/DebianReleases)"
-                return $false
+                $result.Reason = "Unsupported Debian Linux kernel version: ${kernelVersion} (see https://wiki.debian.org/DebianReleases)"
+                $result.V3AgentSupportsOS = $false
             }
         }
         # Fedora "Linux 5.11.22-100.fc32.x86_64 #1 SMP Wed May 19 18:58:25 UTC 2021"
-        "(?im)^Linux.*\.fc(?<Major>[\d]+)\..*$"  {
+        "(?im)^Linux.*\.fc(?<Major>[\d]+)\..*$" {
             Write-Debug "Fedora: '$OSDescription'"
             [int]$fedoraVersion = $Matches["Major"]
             Write-Debug "Fedora ${fedoraVersion}"
 
             if ($fedoraVersion -ge 33) {
-                Write-Debug "Supported Fedora version: ${fedoraVersion}"
-                return $true
+                $result.Reason = "Supported Fedora version: ${fedoraVersion}"
+                $result.V3AgentSupportsOS = $true
             } else {
-                Write-Verbose "Unsupported Fedora version: ${fedoraVersion}"
-                return $false
+                $result.Reason = "Unsupported Fedora version: ${fedoraVersion}"
+                $result.V3AgentSupportsOS = $false
             }
         }
         # Red Hat / CentOS "Linux 4.18.0-425.3.1.el8.x86_64 #1 SMP Fri Sep 30 11:45:06 EDT 2022"
-        "(?im)^Linux.*\.el(?<Major>[\d]+).*$"  {
+        "(?im)^Linux.*\.el(?<Major>[\d]+).*$" {
             Write-Debug "Red Hat / CentOS / Oracle Linux: '$OSDescription'"
             [int]$majorVersion = $Matches["Major"]
             Write-Debug "Red Hat ${majorVersion}"
 
             if ($majorVersion -ge 7) {
-                Write-Debug "Supported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
-                return $true
+                $result.Reason = "Supported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
+                $result.V3AgentSupportsOS = $true
             } else {
-                Write-Verbose "Unsupported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
-                return $false
+                $result.Reason = "Unsupported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
+                $result.V3AgentSupportsOS = $false
             }
         }
         # Ubuntu "Linux 4.15.0-1113-azure #126~16.04.1-Ubuntu SMP Tue Apr 13 16:55:24 UTC 2021"
-        "(?im)^Linux.*[^\d]+((?<Major>[\d]+)((\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)))(\.(?<Revision>[\d]+))?)-Ubuntu.*$"  {
+        "(?im)^Linux.*[^\d]+((?<Major>[\d]+)((\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)))(\.(?<Revision>[\d]+))?)-Ubuntu.*$" {
             Write-Debug "Ubuntu: '$OSDescription'"
             [int]$majorVersion = $Matches["Major"]
             Write-Debug "Ubuntu ${majorVersion}"
 
             if ($majorVersion -lt 16) {
-                Write-Verbose "Unsupported Ubuntu version: ${majorVersion}"
-                return $false
+                $result.Reason = "Unsupported Ubuntu version: ${majorVersion}"
+                $result.V3AgentSupportsOS = $false
             }
             if (($majorVersion % 2) -ne 0) {
-                Write-Verbose "non-LTS Ubuntu version: ${majorVersion}"
-                return $null
+                $result.Reason = "non-LTS Ubuntu version: ${majorVersion}"
             }
             Write-Debug "Supported Ubuntu version: ${majorVersion}"
-            return $true
+            $result.V3AgentSupportsOS = $true
         }
         # Ubuntu "Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:32 UTC 2015"
         # Ubuntu 22 "Linux 5.15.0-1023-azure #29-Ubuntu SMP Wed Oct 19 22:37:08 UTC 2022 x86_64 x86_64 x86_64 GNU/Linux"
@@ -192,14 +248,28 @@ function Validate-OS (
             Write-Debug "Ubuntu (no version declared): '$OSDescription'"
             [version]$kernelVersion = ("{0}.{1}" -f $Matches["KernelMajor"],$Matches["KernelMinor"])
             Write-Debug "Ubuntu Linux Kernel $($kernelVersion.ToString())"
-            [version]$minKernelVersion = '4.4' # https://ubuntu.com/kernel/lifecycle
+            [version[]]$supportedKernelVersions = @(
+                '4.4',  # 16.04
+                '4.8',  # 16.10
+                '4.15', # 18.04
+                '4.18', # 18.04
+                '5.4',  # 20.04
+                '5.8',  # 20.04
+                '5.15'  # 22.04
+            )
+            [version]$minKernelVersion = ($supportedKernelVersions | Measure-Object -Minimum | Select-Object -ExpandProperty Minimum)
 
             if ($kernelVersion -lt $minKernelVersion ) {
-                Write-Verbose "Unsupported Ubuntu Linux kernel version: ${kernelVersion} (see https://ubuntu.com/kernel/lifecycle)"
-                return $false
+                $result.Reason = "Unsupported Ubuntu Linux kernel version: ${kernelVersion}` (see https://ubuntu.com/kernel/lifecycle)"
+                $result.V3AgentSupportsOS = $false
             }
+            if ($kernelVersion -in $supportedKernelVersions) {
+                $result.Reason = "Supported Ubuntu Linux kernel version: ${kernelVersion}"
+                $result.V3AgentSupportsOS = $true
+            }
+
             Write-Verbose "Unknown Ubuntu version: '$OSDescription'"
-            return $null
+            $result.Reason = "Unknown Ubuntu version: '$OSDescription'"
         }
         # macOS "Darwin 17.6.0 Darwin Kernel Version 17.6.0: Tue May  8 15:22:16 PDT 2018; root:xnu-4570.61.1~1/RELEASE_X86_64"
         "(?im)^Darwin (?<DarwinMajor>[\d]+)(\.(?<DarwinMinor>[\d]+)).*$" {
@@ -209,15 +279,15 @@ function Validate-OS (
             [version]$minDarwinVersion = '19.0' 
 
             if ($darwinVersion -ge $minDarwinVersion) {
-                Write-Debug "Supported Darwin (macOS) version: ${darwinVersion}"
-                return $true
+                $result.Reason = "Supported Darwin (macOS) version: ${darwinVersion}"
+                $result.V3AgentSupportsOS = $true
             } else {
-                Write-Verbose "Unsupported Darwin (macOS) version): ${darwinVersion} (see https://en.wikipedia.org/wiki/Darwin_(operating_system)"
-                return $false
+                $result.Reason = "Unsupported Darwin (macOS) version): ${darwinVersion} (see https://en.wikipedia.org/wiki/Darwin_(operating_system)"
+                $result.V3AgentSupportsOS = $false
             }
         }
         # Windows 10 / Server 2016+ "Microsoft Windows 10.0.20348"
-        "(?im)^(Microsoft Windows|Windows_NT) (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$"  {
+        "(?im)^(Microsoft Windows|Windows_NT) (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+)).*$" {
             [int]$windowsMajorVersion = $Matches["Major"]
             [int]$windowsMinorVersion = $Matches["Minor"]
             [int]$windowsBuild = $Matches["Build"]
@@ -227,41 +297,41 @@ function Validate-OS (
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 1)) {
                 # Windows 7
                 if ($windowsBuild -ge 7601) {
-                    Write-Debug "Supported Windows 7 build: ${windowsVersion}"
-                    return $true
+                    $result.Reason = "Supported Windows 7 build: ${windowsVersion}"
+                    $result.V3AgentSupportsOS = $true
                 } else {
-                    Write-Verbose "Unsupported Windows 7 build: ${windowsVersion}"
-                    return $false
+                    $result.Reason = "Unsupported Windows 7 build: ${windowsVersion}"
+                    $result.V3AgentSupportsOS = $false
                 }
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 2)) {
                 # Windows 8 / Windows Server 2012 R1
-                Write-Verbose "Windows 8 is not supported: ${windowsVersion}"
-                return $false
+                $result.Reason = "Windows 8 is not supported: ${windowsVersion}"
+                $result.V3AgentSupportsOS = $false
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 3)) {
                 # Windows 8.1 / Windows Server 2012 R2
-                Write-Debug "Supported Windows 8.1 version: ${windowsVersion}"
-                return $true
+                $result.Reason = "Supported Windows 8.1 version: ${windowsVersion}"
+                $result.V3AgentSupportsOS = $true
             }
             if ($windowsMajorVersion -eq 10) {
                 # Windows 10 / Windows Server 2016+
                 if ($windowsBuild -ge 14393) {
-                    Write-Debug "Supported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
-                    return $true
+                    $result.Reason = "Supported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
+                    $result.V3AgentSupportsOS = $true
                 } else {
-                    Write-Verbose "Unsupported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
-                    return $false
+                    $result.Reason = "Unsupported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
+                    $result.V3AgentSupportsOS = $false
                 }
             }
-            Write-Verbose "Unknown Windows version: '${OSDescription}'"
-            return $null
+            $result.Reason = "Unknown Windows version: '${OSDescription}'"
         }
         default {
-            Write-Verbose "Unknown operating system: '$OSDescription'"
-            return $null
+            $result.Reason = "Unknown operating system: '$OSDescription'"
         }
     }
+
+    return $result
 }
 
 if (!$OS -and !$OrganizationUrl) {
@@ -384,7 +454,7 @@ try {
                 $totalNumberOfAgents++          
                 $osConsolidated = $_.osDescription
                 $capabilityOSDescription = ("{0} {1}" -f $_.systemCapabilities."Agent.OS",$_.systemCapabilities."Agent.OSVersion")
-                if ($capabilityOSDescription -and !$osConsolidated) {
+                if ($capabilityOSDescription -and !$osConsolidated -and ![string]::IsNullOrWhiteSpace($capabilityOSDescription)) {
                     $osConsolidated = $capabilityOSDescription
                 }
                 Write-Debug "osConsolidated: ${osConsolidated}"
