@@ -125,7 +125,6 @@ class ClassificationResult {
     }
 }
 
-# [OutputType([ClassificationResult])]
 function Classify-OS (
     [parameter(Mandatory=$false)][string]$AgentOS,
     [parameter(Mandatory=$true)][psobject]$Agent
@@ -133,7 +132,6 @@ function Classify-OS (
     Write-Debug "AgentOS: ${AgentOS}"
     $result = Validate-OS -OSDescription $AgentOS
     $Agent | Add-Member -NotePropertyName ValidationResult -NotePropertyValue $result
-    $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
 }
 
 function Filter-Agents (
@@ -571,7 +569,6 @@ try {
         Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
         $script:allAgents | Filter-Agents `
                           | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
-                                                   @{Label="Status"; Expression={$_.status}},`
                                                    OS,`
                                                    @{Label="UpgradeStatement"; Expression={
                                                     if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
