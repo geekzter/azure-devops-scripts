@@ -61,10 +61,11 @@ param (
 ) 
 
 class ClassificationResult {
-    hidden [string]$_upgradeStatement
+    hidden [int]$_sortOrder = 1
+    hidden [string]$_upgradeStatement = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
     [ValidateSet($null, $true, $false)]
     hidden [object]$_v3AgentSupportsOS
-    hidden [string]$_v3AgentSupportsOSText
+    hidden [string]$_v3AgentSupportsOSText = "Unknown"
     [string]$_reason
 
     ClassificationResult() {
@@ -77,8 +78,17 @@ class ClassificationResult {
             $this._reason = $value
             Write-Debug "ClassificationResult.Reason = ${value}"
         }
+        $this | Add-Member -Name SortOrder -MemberType ScriptProperty -Value {
+            return $this._sortOrder 
+        }
         $this | Add-Member -Name UpgradeStatement -MemberType ScriptProperty -Value {
+            # Get
             return $this._upgradeStatement
+        } -SecondValue {
+            # Set
+            param($value)
+
+            $this._upgradeStatement = $value
         }
         $this | Add-Member -Name V3AgentSupportsOS -MemberType ScriptProperty -Value {
             # Get
@@ -89,12 +99,15 @@ class ClassificationResult {
 
             $this._v3AgentSupportsOS = $value
             if ($value -eq $null) {
-                $this._v3AgentSupportsOSText = = "Unknown"
+                $this._sortOrder = 1
+                $this._v3AgentSupportsOSText = "Unknown"
                 $this._upgradeStatement = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
             } elseif ($value) {
+                $this._sortOrder = 2
                 $this._v3AgentSupportsOSText = "Yes"
                 $this._upgradeStatement = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
             } else {
+                $this._sortOrder = 0
                 $this._v3AgentSupportsOSText = "No"
                 $this._upgradeStatement = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
             }
@@ -113,21 +126,13 @@ function Classify-OS (
     Write-Debug "AgentOS: ${AgentOS}"
     $result = [ClassificationResult]::new()
     if ($AgentOS) {
-        # $v3AgentSupportsOS = Validate-OS -OSDescription $AgentOS
         $result = Validate-OS -OSDescription $AgentOS
-        if ($result.V3AgentSupportsOS -eq $null) {
-            $osComment = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
-        } elseif ($result.V3AgentSupportsOS) {
-            $osComment = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
-        } else {
-            $osComment = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
-        }
     } else {
-        $osComment = "OS description missing"
+        $result = [ClassificationResult]::new()
+        $result.UpgradeStatement = "OS description missing"
     }
     $Agent | Add-Member -NotePropertyName ValidationResult -NotePropertyValue $result
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
-    $Agent | Add-Member -NotePropertyName OSComment -NotePropertyValue $osComment
 }
 
 function Filter-Agents (
@@ -139,10 +144,10 @@ function Filter-Agents (
                 $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $true}
             } 
             "V3CompatibilityIssues" {
-                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -ne $true}
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -ne $true} #| Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
             } 
             "V3CompatibilityUnknown" {
-                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $null} | Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $null} #| Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
             } 
             "V3InCompatible" {
                 $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $false}
@@ -348,7 +353,16 @@ if ($OS) {
         Classify-OS -AgentOS $_ -Agent $agent
         Write-Output $agent
     } | Filter-Agents `
-      | Format-Table -Property OS, OSComment `
+      | Format-Table -Property OS,`
+                               @{Label="UpgradeStatement"; Expression={
+                                if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
+                                    "$($PSStyle.Formatting.Warning)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
+                                } elseif ($_.ValidationResult.V3AgentSupportsOS) {
+                                    $_.ValidationResult.UpgradeStatement
+                                } else {
+                                    "$($PSStyle.Formatting.Error)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
+                                }                                                    
+                               }}
       | Out-Host -Paging
 
     return
@@ -469,7 +483,6 @@ try {
                     | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                                              @{Label="Status"; Expression={$_.status}},`
                                              OS,`
-                                             OSComment,`
                                              AgentUrl
 
             $script:allAgents.Add($agents) | Out-Null
@@ -485,20 +498,9 @@ try {
     $script:allAgents | ForEach-Object { # Flatten nested arrays
                             $_ 
                         } `
-                      | ForEach-Object { # Populate implicit values
-                            if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
-                                $v3AgentSupportsOSTextValue = "Unknown"
-                            } elseif ($_.ValidationResult.V3AgentSupportsOS) {
-                                $v3AgentSupportsOSTextValue = "Yes"
-                            } else {
-                                $v3AgentSupportsOSTextValue = "No"
-                            }
-                            $_ | Add-Member -NotePropertyName V3AgentSupportsOSTextValue -NotePropertyValue $v3AgentSupportsOSTextValue
-                            $_ 
-                        } `
                       | Set-Variable allAgents -Scope script
 
-    $script:allAgents | Sort-Object -Property @{Expression = "V3AgentSupportsOS"; Descending = $true}, `
+    $script:allAgents | Sort-Object -Property @{Expression = {$_.ValidationResult.SortOrder}; Descending = $false}, `
                                               @{Expression = "PoolName"; Descending = $false}, `
                                               @{Expression = "name"; Descending = $false} `
                       | Set-Variable allAgents -Scope script
@@ -507,7 +509,15 @@ try {
     $script:allAgents | Filter-Agents `
                       | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
                                                 @{Label="OS"; Expression={$_.OS -replace ";",""}},`
-                                                OSComment,`
+                                                @{Label="UpgradeStatement"; Expression={
+                                                    if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
+                                                        "$($PSStyle.Formatting.Warning)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
+                                                    } elseif ($_.ValidationResult.V3AgentSupportsOS) {
+                                                        $_.ValidationResult.UpgradeStatement
+                                                    } else {
+                                                        "$($PSStyle.Formatting.Error)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
+                                                    }                                                    
+                                                }},`                                                
                                                 @{Label="V3OS"; Expression={$_.ValidationResult.V3AgentSupportsOSText}},`
                                                 PoolName,`
                                                 AgentUrl `
@@ -523,13 +533,13 @@ try {
                           | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                                                    @{Label="Status"; Expression={$_.status}},`
                                                    OS,`
-                                                   @{Label="OSComment"; Expression={
+                                                   @{Label="UpgradeStatement"; Expression={
                                                     if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
-                                                        "$($PSStyle.Formatting.Warning)$($_.OSComment)$($PSStyle.Reset)"
+                                                        "$($PSStyle.Formatting.Warning)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
                                                     } elseif ($_.ValidationResult.V3AgentSupportsOS) {
-                                                        $_.OSComment
+                                                        $_.ValidationResult.UpgradeStatement
                                                     } else {
-                                                        "$($PSStyle.Formatting.Error)$($_.OSComment)$($PSStyle.Reset)"
+                                                        "$($PSStyle.Formatting.Error)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
                                                     }                                                    
                                                     }},`
                                                    @{Label="V3OS"; Expression={$_.ValidationResult.V3AgentSupportsOSText}},`
@@ -544,7 +554,7 @@ try {
             Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
             Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
             Write-Host "`nAgents by v2 -> v3 compatibility:"
-            $script:allAgents | Group-Object -Property V3AgentSupportsOSTextValue `
+            $script:allAgents | Group-Object {$_.ValidationResult.V3AgentSupportsOSText} `
                               | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}},`
                                                        Count,`
                                                        @{Label="Percentage"; Expression={($_.Count / $totalNumberOfAgents).ToString("p")}}
