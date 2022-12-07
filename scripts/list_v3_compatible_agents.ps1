@@ -144,10 +144,10 @@ function Filter-Agents (
                 $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $true}
             } 
             "V3CompatibilityIssues" {
-                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -ne $true} #| Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -ne $true} | Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
             } 
             "V3CompatibilityUnknown" {
-                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $null} #| Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $null} 
             } 
             "V3InCompatible" {
                 $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $false}
@@ -186,7 +186,7 @@ function Validate-OS {
 
     $result = [ClassificationResult]::new()
 
-    # Parse operating system header
+    # Parse operating system description
     switch -regex ($OSDescription) {
         # Debian "Linux 4.9.0-16-amd64 #1 SMP Debian 4.9.272-2 (2021-07-19)"
         "(?im)^Linux.* Debian (?<Major>[\d]+)(\.(?<Minor>[\d]+))(\.(?<Build>[\d]+))?.*$" {
@@ -198,9 +198,11 @@ function Validate-OS {
             if ($kernelVersion -ge $minKernelVersion) {
                 $result.Reason = "Supported Debian Linux kernel version: ${kernelVersion}"
                 $result.V3AgentSupportsOS = $true
+                return $result
             } else {
                 $result.Reason = "Unsupported Debian Linux kernel version: ${kernelVersion} (see https://wiki.debian.org/DebianReleases)"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
         }
         # Fedora "Linux 5.11.22-100.fc32.x86_64 #1 SMP Wed May 19 18:58:25 UTC 2021"
@@ -212,9 +214,11 @@ function Validate-OS {
             if ($fedoraVersion -ge 33) {
                 $result.Reason = "Supported Fedora version: ${fedoraVersion}"
                 $result.V3AgentSupportsOS = $true
+                return $result
             } else {
                 $result.Reason = "Unsupported Fedora version: ${fedoraVersion}"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
         }
         # Red Hat / CentOS "Linux 4.18.0-425.3.1.el8.x86_64 #1 SMP Fri Sep 30 11:45:06 EDT 2022"
@@ -226,9 +230,11 @@ function Validate-OS {
             if ($majorVersion -ge 7) {
                 $result.Reason = "Supported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
                 $result.V3AgentSupportsOS = $true
+                return $result
             } else {
                 $result.Reason = "Unsupported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
         }
         # Ubuntu "Linux 4.15.0-1113-azure #126~16.04.1-Ubuntu SMP Tue Apr 13 16:55:24 UTC 2021"
@@ -240,12 +246,15 @@ function Validate-OS {
             if ($majorVersion -lt 16) {
                 $result.Reason = "Unsupported Ubuntu version: ${majorVersion}"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
             if (($majorVersion % 2) -ne 0) {
                 $result.Reason = "non-LTS Ubuntu version: ${majorVersion}"
+                return $result
             }
             Write-Debug "Supported Ubuntu version: ${majorVersion}"
             $result.V3AgentSupportsOS = $true
+            return $result
         }
         # Ubuntu "Linux 3.19.0-26-generic #28-Ubuntu SMP Tue Aug 11 14:16:32 UTC 2015"
         # Ubuntu 22 "Linux 5.15.0-1023-azure #29-Ubuntu SMP Wed Oct 19 22:37:08 UTC 2022 x86_64 x86_64 x86_64 GNU/Linux"
@@ -267,14 +276,16 @@ function Validate-OS {
             if ($kernelVersion -lt $minKernelVersion ) {
                 $result.Reason = "Unsupported Ubuntu Linux kernel version: ${kernelVersion}` (see https://ubuntu.com/kernel/lifecycle)"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
             if ($kernelVersion -in $supportedKernelVersions) {
                 $result.Reason = "Supported Ubuntu Linux kernel version: ${kernelVersion}"
                 $result.V3AgentSupportsOS = $true
+                return $result
             }
 
-            Write-Verbose "Unknown Ubuntu version: '$OSDescription'"
             $result.Reason = "Unknown Ubuntu version: '$OSDescription'"
+            return $result
         }
         # macOS "Darwin 17.6.0 Darwin Kernel Version 17.6.0: Tue May  8 15:22:16 PDT 2018; root:xnu-4570.61.1~1/RELEASE_X86_64"
         "(?im)^Darwin (?<DarwinMajor>[\d]+)(\.(?<DarwinMinor>[\d]+)).*$" {
@@ -286,9 +297,11 @@ function Validate-OS {
             if ($darwinVersion -ge $minDarwinVersion) {
                 $result.Reason = "Supported Darwin (macOS) version: ${darwinVersion}"
                 $result.V3AgentSupportsOS = $true
+                return $result
             } else {
                 $result.Reason = "Unsupported Darwin (macOS) version): ${darwinVersion} (see https://en.wikipedia.org/wiki/Darwin_(operating_system)"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
         }
         # Windows 10 / Server 2016+ "Microsoft Windows 10.0.20348"
@@ -304,39 +317,45 @@ function Validate-OS {
                 if ($windowsBuild -ge 7601) {
                     $result.Reason = "Supported Windows 7 build: ${windowsVersion}"
                     $result.V3AgentSupportsOS = $true
+                    return $result
                 } else {
                     $result.Reason = "Unsupported Windows 7 build: ${windowsVersion}"
                     $result.V3AgentSupportsOS = $false
+                    return $result
                 }
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 2)) {
                 # Windows 8 / Windows Server 2012 R1
                 $result.Reason = "Windows 8 is not supported: ${windowsVersion}"
                 $result.V3AgentSupportsOS = $false
+                return $result
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 3)) {
                 # Windows 8.1 / Windows Server 2012 R2
                 $result.Reason = "Supported Windows 8.1 version: ${windowsVersion}"
                 $result.V3AgentSupportsOS = $true
+                return $result
             }
             if ($windowsMajorVersion -eq 10) {
                 # Windows 10 / Windows Server 2016+
                 if ($windowsBuild -ge 14393) {
                     $result.Reason = "Supported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
                     $result.V3AgentSupportsOS = $true
+                    return $result
                 } else {
                     $result.Reason = "Unsupported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
                     $result.V3AgentSupportsOS = $false
+                    return $result
                 }
             }
             $result.Reason = "Unknown Windows version: '${OSDescription}'"
+            return $result
         }
         default {
             $result.Reason = "Unknown operating system: '$OSDescription'"
+            return $result
         }
     }
-
-    return $result
 }
 
 if (!$OS -and !$OrganizationUrl) {
