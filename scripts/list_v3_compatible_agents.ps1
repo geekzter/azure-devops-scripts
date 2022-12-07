@@ -65,6 +65,7 @@ class ClassificationResult {
     hidden [string]$_upgradeStatement = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
     [ValidateSet($null, $true, $false)]
     hidden [object]$_v3AgentSupportsOS
+    [ValidateSet("MissingOS", "Unsupported", "Unknown", "UnknownOS", "UnknownOSVersion", "UnsupportedOSVersion", "Supported")]
     hidden [string]$_v3AgentSupportsOSText = "Unknown"
     [string]$_reason
 
@@ -104,16 +105,22 @@ class ClassificationResult {
                 $this._upgradeStatement = "OS (version) unknown, v2 agent won't upgrade to v3 automatically"
             } elseif ($value) {
                 $this._sortOrder = 2
-                $this._v3AgentSupportsOSText = "Yes"
+                $this._v3AgentSupportsOSText = "Supported"
                 $this._upgradeStatement = "OS supported by v3 agent, v2 agent will automatically upgrade to v3"
             } else {
                 $this._sortOrder = 0
-                $this._v3AgentSupportsOSText = "No"
+                $this._v3AgentSupportsOSText = "Unsupported"
                 $this._upgradeStatement = "OS not supported by v3 agent, v2 agent won't upgrade to v3"
             }
         }
         $this | Add-Member -Name V3AgentSupportsOSText -MemberType ScriptProperty -Value {
+            # Get
             return $this._v3AgentSupportsOSText 
+        } -SecondValue {
+            # Set
+            param($value)
+
+            $this._v3AgentSupportsOSText = $value
         }
     }
 }
@@ -124,13 +131,7 @@ function Classify-OS (
     [parameter(Mandatory=$true)][psobject]$Agent
 ) {
     Write-Debug "AgentOS: ${AgentOS}"
-    $result = [ClassificationResult]::new()
-    if ($AgentOS) {
-        $result = Validate-OS -OSDescription $AgentOS
-    } else {
-        $result = [ClassificationResult]::new()
-        $result.UpgradeStatement = "OS description missing"
-    }
+    $result = Validate-OS -OSDescription $AgentOS
     $Agent | Add-Member -NotePropertyName ValidationResult -NotePropertyValue $result
     $Agent | Add-Member -NotePropertyName V3AgentSupportsOS -NotePropertyValue $v3AgentSupportsOS
 }
@@ -181,10 +182,17 @@ function Open-Document (
 function Validate-OS {
     [OutputType([ClassificationResult])]
     param (
-        [parameter(Mandatory=$true)][string]$OSDescription
+        [parameter(Mandatory=$false)][string]$OSDescription
     )
 
     $result = [ClassificationResult]::new()
+
+    if (!$OSDescription) {
+        $result = [ClassificationResult]::new()
+        $result.UpgradeStatement = "OS description missing"
+        $result.V3AgentSupportsOSText = "MissingOS"
+        return $result
+    }
 
     # Parse operating system description
     switch -regex ($OSDescription) {
@@ -202,6 +210,7 @@ function Validate-OS {
             } else {
                 $result.Reason = "Unsupported Debian Linux kernel version: ${kernelVersion} (see https://wiki.debian.org/DebianReleases)"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
         }
@@ -218,6 +227,7 @@ function Validate-OS {
             } else {
                 $result.Reason = "Unsupported Fedora version: ${fedoraVersion}"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
         }
@@ -234,6 +244,7 @@ function Validate-OS {
             } else {
                 $result.Reason = "Unsupported RHEL / CentOS / Oracle Linux version: ${majorVersion}"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
         }
@@ -246,10 +257,12 @@ function Validate-OS {
             if ($majorVersion -lt 16) {
                 $result.Reason = "Unsupported Ubuntu version: ${majorVersion}"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
             if (($majorVersion % 2) -ne 0) {
                 $result.Reason = "non-LTS Ubuntu version: ${majorVersion}"
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
             Write-Debug "Supported Ubuntu version: ${majorVersion}"
@@ -276,6 +289,7 @@ function Validate-OS {
             if ($kernelVersion -lt $minKernelVersion ) {
                 $result.Reason = "Unsupported Ubuntu Linux kernel version: ${kernelVersion}` (see https://ubuntu.com/kernel/lifecycle)"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
             if ($kernelVersion -in $supportedKernelVersions) {
@@ -285,6 +299,7 @@ function Validate-OS {
             }
 
             $result.Reason = "Unknown Ubuntu version: '$OSDescription'"
+            $result.V3AgentSupportsOSText = "UnknownOSVersion"
             return $result
         }
         # macOS "Darwin 17.6.0 Darwin Kernel Version 17.6.0: Tue May  8 15:22:16 PDT 2018; root:xnu-4570.61.1~1/RELEASE_X86_64"
@@ -301,6 +316,7 @@ function Validate-OS {
             } else {
                 $result.Reason = "Unsupported Darwin (macOS) version): ${darwinVersion} (see https://en.wikipedia.org/wiki/Darwin_(operating_system)"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
         }
@@ -321,6 +337,7 @@ function Validate-OS {
                 } else {
                     $result.Reason = "Unsupported Windows 7 build: ${windowsVersion}"
                     $result.V3AgentSupportsOS = $false
+                    $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                     return $result
                 }
             }
@@ -328,6 +345,7 @@ function Validate-OS {
                 # Windows 8 / Windows Server 2012 R1
                 $result.Reason = "Windows 8 is not supported: ${windowsVersion}"
                 $result.V3AgentSupportsOS = $false
+                $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                 return $result
             }
             if (($windowsMajorVersion -eq 6) -and ($windowsMinorVersion -eq 3)) {
@@ -345,14 +363,17 @@ function Validate-OS {
                 } else {
                     $result.Reason = "Unsupported Windows 10 / Windows Server 2016+ build: ${windowsVersion}"
                     $result.V3AgentSupportsOS = $false
+                    $result.V3AgentSupportsOSText = "UnsupportedOSVersion"
                     return $result
                 }
             }
             $result.Reason = "Unknown Windows version: '${OSDescription}'"
+            $result.V3AgentSupportsOSText = "UnknownOSVersion"
             return $result
         }
         default {
             $result.Reason = "Unknown operating system: '$OSDescription'"
+            $result.V3AgentSupportsOSText = "UnknownOS"
             return $result
         }
     }
