@@ -136,19 +136,19 @@ function Filter-Agents (
     process {
         switch ($Filter) {
             "V3Compatible" {
-                $Agents | Where-Object -Property V3AgentSupportsOS -eq $true
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $true}
             } 
             "V3CompatibilityIssues" {
-                $Agents | Where-Object -Property V3AgentSupportsOS -ne $true
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -ne $true}
             } 
             "V3CompatibilityUnknown" {
-                $Agents | Where-Object -Property V3AgentSupportsOS -eq $null | Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $null} | Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
             } 
             "V3InCompatible" {
-                $Agents | Where-Object -Property V3AgentSupportsOS -eq $false
+                $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $false}
             } 
             "MissingOS" {
-                $Agents | Where-Object -Property OS -eq $null
+                $Agents | Where-Object {[string]::IsNullOrWhiteSpace($_.OS)}
             } 
             "All" {
                 $Agents
@@ -486,9 +486,9 @@ try {
                             $_ 
                         } `
                       | ForEach-Object { # Populate implicit values
-                            if ($_.V3AgentSupportsOS -eq $null) {
+                            if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
                                 $v3AgentSupportsOSTextValue = "Unknown"
-                            } elseif ($_.V3AgentSupportsOS) {
+                            } elseif ($_.ValidationResult.V3AgentSupportsOS) {
                                 $v3AgentSupportsOSTextValue = "Yes"
                             } else {
                                 $v3AgentSupportsOSTextValue = "No"
@@ -508,7 +508,7 @@ try {
                       | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
                                                 @{Label="OS"; Expression={$_.OS -replace ";",""}},`
                                                 OSComment,`
-                                                @{Label="V3OS"; Expression={$_.V3AgentSupportsOSTextValue}},`
+                                                @{Label="V3OS"; Expression={$_.ValidationResult.V3AgentSupportsOSText}},`
                                                 PoolName,`
                                                 AgentUrl `
                       | Export-Csv -Path $exportFilePath
@@ -524,15 +524,15 @@ try {
                                                    @{Label="Status"; Expression={$_.status}},`
                                                    OS,`
                                                    @{Label="OSComment"; Expression={
-                                                    if ($_.V3AgentSupportsOS -eq $null) {
+                                                    if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
                                                         "$($PSStyle.Formatting.Warning)$($_.OSComment)$($PSStyle.Reset)"
-                                                    } elseif ($_.V3AgentSupportsOS) {
+                                                    } elseif ($_.ValidationResult.V3AgentSupportsOS) {
                                                         $_.OSComment
                                                     } else {
                                                         "$($PSStyle.Formatting.Error)$($_.OSComment)$($PSStyle.Reset)"
                                                     }                                                    
                                                     }},`
-                                                   @{Label="V3OS"; Expression={$_.V3AgentSupportsOSTextValue}},`
+                                                   @{Label="V3OS"; Expression={$_.ValidationResult.V3AgentSupportsOSText}},`
                                                    PoolName,`
                                                    AgentUrl `
                           | Out-Host -Paging
