@@ -595,7 +595,7 @@ try {
         if ($script:allAgents) {
             Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
             Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
-            $statisticsFilter = ($IncludeMissingOSInStatistics ? "All" : "ExcludeMissingOS")
+            $statisticsFilter = (($Filter -ieq "All") -or $IncludeMissingOSInStatistics ? "All" : "ExcludeMissingOS")
             Write-Host "`nAgents by v2 -> v3 compatibility (${statisticsFilter}):"
 
             $script:allAgents | Filter-Agents -AgentFilter $statisticsFilter `
