@@ -547,16 +547,9 @@ try {
     $script:allAgents | Filter-Agents `
                       | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
                                                 @{Label="OS"; Expression={$_.OS -replace ";",""}},`
-                                                @{Label="UpgradeStatement"; Expression={
-                                                    if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
-                                                        "$($PSStyle.Formatting.Warning)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
-                                                    } elseif ($_.ValidationResult.V3AgentSupportsOS) {
-                                                        $_.ValidationResult.UpgradeStatement
-                                                    } else {
-                                                        "$($PSStyle.Formatting.Error)$($_.ValidationResult.UpgradeStatement)$($PSStyle.Reset)"
-                                                    }                                                    
-                                                }},`                                                
                                                 @{Label="V3OS"; Expression={$_.ValidationResult.V3AgentSupportsOSText}},`
+                                                @{Label="UpgradeStatement"; Expression={$_.ValidationResult.UpgradeStatement}},`
+                                                @{Label="Reason"; Expression={$_.ValidationResult.Reason}},`
                                                 PoolName,`
                                                 AgentUrl `
                       | Export-Csv -Path $exportFilePath
