@@ -519,7 +519,6 @@ try {
             } 
             $agents | Filter-Agents `
                     | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
-                                             @{Label="Status"; Expression={$_.status}},`
                                              OS,`
                                              AgentUrl
 
@@ -546,10 +545,15 @@ try {
     $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
     $script:allAgents | Filter-Agents `
                       | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
+                                                @{Label="Id"; Expression={$_.id}},`
                                                 @{Label="OS"; Expression={$_.OS -replace ";",""}},`
                                                 @{Label="V3OS"; Expression={$_.ValidationResult.V3AgentSupportsOSText}},`
                                                 @{Label="UpgradeStatement"; Expression={$_.ValidationResult.UpgradeStatement}},`
                                                 @{Label="Reason"; Expression={$_.ValidationResult.Reason}},`
+                                                @{Label="CreatedOn"; Expression={$_.createdOn}},`
+                                                @{Label="StatusChangedOn"; Expression={$_.statusChangedOn}},`
+                                                @{Label="Status"; Expression={$_.status}},`
+                                                @{Label="Version"; Expression={$_.version}},`
                                                 PoolName,`
                                                 AgentUrl `
                       | Export-Csv -Path $exportFilePath
