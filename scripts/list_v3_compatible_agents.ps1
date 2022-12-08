@@ -47,7 +47,7 @@ param (
     [parameter(Mandatory=$false)]
     [parameter(ParameterSetName="pool")]
     [parameter(ParameterSetName="os")]
-    [ValidateSet("All", "MissingOS", "V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible")]
+    [ValidateSet("All", "ExcludeMissingOS", "MissingOS", "V3Compatible", "V3CompatibilityIssues", "V3CompatibilityUnknown", "V3InCompatible")]
     [string]
     $Filter="V3CompatibilityIssues",
 
@@ -55,7 +55,11 @@ param (
     [switch]
     $OpenCsv=$false,
 
-    [parameter(Mandatory=$false,HelpMessage="Do not ask for input to starty processing",ParameterSetName="pool")]
+    [parameter(Mandatory=$false)]
+    [switch]
+    $IncludeMissingOSInStatistics=$false,
+
+    [parameter(Mandatory=$false,HelpMessage="Do not ask for input to start processing",ParameterSetName="pool")]
     [switch]
     $Force=$false
 ) 
@@ -135,10 +139,20 @@ function Classify-OS (
 }
 
 function Filter-Agents (
-    [parameter(Mandatory=$true,ValueFromPipeline=$true)][psobject[]]$Agents
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)][psobject[]]$Agents,
+    [parameter(Mandatory=$true)][string]$AgentFilter
 ) {
     process {
-        switch ($Filter) {
+        switch ($AgentFilter) {
+            "All" {
+                $Agents
+            }
+            "ExcludeMissingOS" {
+                $Agents | Where-Object {![string]::IsNullOrWhiteSpace($_.OS)}
+            } 
+            "MissingOS" {
+                $Agents | Where-Object {[string]::IsNullOrWhiteSpace($_.OS)}
+            } 
             "V3Compatible" {
                 $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $true}
             } 
@@ -151,12 +165,6 @@ function Filter-Agents (
             "V3InCompatible" {
                 $Agents | Where-Object {$_.ValidationResult.V3AgentSupportsOS -eq $false}
             } 
-            "MissingOS" {
-                $Agents | Where-Object {[string]::IsNullOrWhiteSpace($_.OS)}
-            } 
-            "All" {
-                $Agents
-            }
             default {
                 $Agents
             }
@@ -390,7 +398,7 @@ if ($OS) {
         } | Set-Variable agent
         Classify-OS -AgentOS $_ -Agent $agent
         Write-Output $agent
-    } | Filter-Agents `
+    } | Filter-Agents -AgentFilter $Filter `
       | Format-Table -Property OS,`
                                @{Label="UpgradeStatement"; Expression={
                                 if ($_.ValidationResult.V3AgentSupportsOS -eq $null) {
@@ -517,7 +525,7 @@ try {
                 $_ | Add-Member -NotePropertyName OS -NotePropertyValue $osConsolidated
                 $_ | Add-Member -NotePropertyName PoolName -NotePropertyValue $poolName
             } 
-            $agents | Filter-Agents `
+            $agents | Filter-Agents -AgentFilter $Filter `
                     | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                                              OS,`
                                              AgentUrl
@@ -543,7 +551,7 @@ try {
                       | Set-Variable allAgents -Scope script
     
     $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
-    $script:allAgents | Filter-Agents `
+    $script:allAgents | Filter-Agents -AgentFilter $Filter `
                       | Select-Object -Property @{Label="Name"; Expression={$_.name}},`
                                                 @{Label="Id"; Expression={$_.id}},`
                                                 @{Label="OS"; Expression={$_.OS -replace ";",""}},`
@@ -564,7 +572,7 @@ try {
     try {
         # Try block, in case the user cancels paging through results
         Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}, and are repeated below"
-        $script:allAgents | Filter-Agents `
+        $script:allAgents | Filter-Agents -AgentFilter $Filter `
                           | Format-Table -Property @{Label="Name"; Expression={$_.name}},`
                                                    OS,`
                                                    @{Label="UpgradeStatement"; Expression={
@@ -587,12 +595,13 @@ try {
         if ($script:allAgents) {
             Write-Host "`nRetrieved agents with filter '${Filter}' in organization (${OrganizationUrl}) have been saved to ${exportFilePath}"
             Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
-            Write-Host "`nAgents by v2 -> v3 compatibility:"
-            $script:allAgents | Group-Object {$_.ValidationResult.V3AgentSupportsOSText} `
+            $statisticsFilter = ($IncludeMissingOSInStatistics ? "All" : "ExcludeMissingOS")
+            Write-Host "`nAgents by v2 -> v3 compatibility (${statisticsFilter}):"
+            $script:allAgents | Filter-Agents -AgentFilter $statisticsFilter `
+                              | Group-Object {$_.ValidationResult.V3AgentSupportsOSText} `
                               | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}},`
                                                        Count,`
                                                        @{Label="Percentage"; Expression={($_.Count / $totalNumberOfAgents).ToString("p")}}
-    
         }    
     }                    
 }
