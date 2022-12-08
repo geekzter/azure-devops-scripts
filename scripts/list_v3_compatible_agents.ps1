@@ -597,11 +597,14 @@ try {
             Write-Host "Processed ${totalNumberOfAgents} agents in ${totalNumberOfPools} in organization '${OrganizationUrl}'"
             $statisticsFilter = ($IncludeMissingOSInStatistics ? "All" : "ExcludeMissingOS")
             Write-Host "`nAgents by v2 -> v3 compatibility (${statisticsFilter}):"
+
             $script:allAgents | Filter-Agents -AgentFilter $statisticsFilter `
                               | Group-Object {$_.ValidationResult.V3AgentSupportsOSText} `
-                              | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}},`
+                              | Set-Variable agentsSummary
+            $agentsSummary    | Measure-Object -Property Count -Sum | Select-Object -ExpandProperty Sum | Set-Variable totalNumberOfFilteredAgents
+            $agentsSummary    | Format-Table -Property @{Label="V3AgentSupportsOS"; Expression={$_.Name}},`
                                                        Count,`
-                                                       @{Label="Percentage"; Expression={($_.Count / $totalNumberOfAgents).ToString("p")}}
+                                                       @{Label="Percentage"; Expression={($_.Count / $totalNumberOfFilteredAgents).ToString("p")}}
         }    
     }                    
 }
