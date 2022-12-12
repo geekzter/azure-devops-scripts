@@ -50,14 +50,17 @@ $release | Format-List | Out-String | Write-Debug
 $release.name -replace "^v","" | Set-Variable agentVersion
 
 if ($IsWindows) {
+    $os = "Windows"
     $osString = [Environment]::Is64BitProcess ? "win-x64" : "win-x86"
     $extension = "zip"
 }
 if ($IsMacOS) {
+    $os = "macOS"
     $osString = (($PSVersionTable.OS -imatch "ARM64") -and $MajorVersion -ge 3) ? "osx-arm64" : "osx-x64"
     $extension = "tar.gz"
 }
 if ($IsLinux) {
+    $os = "Linux"
     $osString = "linux-"
     $arch = $(uname -m)
     if ($arch -in @("arm", "arm64")) {
@@ -79,7 +82,7 @@ try {
     Write-Verbose "Validating whether package exists at '${packageUrl}'..."
     Invoke-WebRequest -method HEAD $packageUrl | Set-Variable packageResponse
     $packageResponse | Format-List | Out-String | Write-Debug
-    Write-Host "Agent package exists at url: ${packageUrl}"
+    Write-Host "Agent package for ${os} ($($VersionPreference.ToLower())): ${packageUrl}"
 } catch {
-    Write-Warning "Could not access agent package url: ${packageUrl}. $($_.Exception.Message)"
+    Write-Warning "Could not access agent package for ${os} ($($VersionPreference.ToLower())): ${packageUrl}`n$($_.Exception.Message)"
 }
