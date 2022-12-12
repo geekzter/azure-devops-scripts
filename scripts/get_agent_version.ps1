@@ -9,8 +9,8 @@ param (
     $ExcludeNode6,
 
     [parameter(Mandatory=$false)][string]
-    [ValidateSet("Stable", "Latest", "Prerelease")]
-    $Channel="Latest",
+    [ValidateSet("Previous", "Current", "Prerelease")]
+    $VersionPreference="Current",
 
     [parameter(Mandatory=$false)]
     [ValidateSet(2, 3)]
@@ -22,8 +22,8 @@ param (
                                                                                                | Where-Object {$_.name -match "^v${MajorVersion}"} `
                                                                                                | Sort-Object -Property @{Expression = "created_at"; Descending = $true} `
                                                                                                | Set-Variable releases
-switch ($Channel) {
-    "Stable" {
+switch ($VersionPreference) {
+    "Previous" {
         $releases | Where-Object {!$_.prerelease} `
                   | Select-Object -Skip 1 -First 1 `
                   | Set-Variable release
@@ -43,10 +43,10 @@ switch ($Channel) {
 }
 
 if (!$release) {
-    Write-Warning "No agent release found for v${MajorVersion}, '${Channel}' channel"
+    Write-Warning "No agent release found for v${MajorVersion}, '${VersionPreference}' VersionPreference"
     exit
 }
-Write-Debug "release: ${release}"
+$release | Format-List | Out-String | Write-Debug
 $release.name -replace "^v","" | Set-Variable agentVersion
 
 if ($IsWindows) {
