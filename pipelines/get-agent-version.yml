@@ -46,7 +46,10 @@ jobs:
 
   steps:
     - pwsh: |
-        ./get_agent_version.ps1
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 2 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 2 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 3 -VersionPreference Prerelase
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 3 -VersionPreference Prerelase
       displayName: 'Test get_agent_version.ps1'
       workingDirectory: '$(Build.SourcesDirectory)/scripts'
       retryCountOnTaskFailure: ${{ parameters.retryCount }} # In case of GitHub rate limiting

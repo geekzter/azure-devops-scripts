@@ -83,6 +83,11 @@ try {
     Invoke-WebRequest -method HEAD $packageUrl | Set-Variable packageResponse
     $packageResponse | Format-List | Out-String | Write-Debug
     Write-Host "Agent package for ${os} ($($VersionPreference.ToLower())): ${packageUrl}"
+    "Agent package for {0} ({1},{2}): {3}" -f $os, `
+                                          $VersionPreference, `
+                                          ($ExcludeNode6 ? "ExcludeNode6" : "IncludeNode6"), `
+                                          $packageUrl `
+                                          | Write-Host
 } catch {
     Write-Warning "Could not access agent package for ${os} ($($VersionPreference.ToLower())): ${packageUrl}`n$($_.Exception.Message)"
 }
