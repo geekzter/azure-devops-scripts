@@ -39,7 +39,7 @@ jobs:
     vmImage: $(vmImage)
 
   steps:
-    - pwsh: |
-        ./get_agent_version.ps1
-      displayName: 'Test'
+    - pwsh: get_agent_version.ps1
+      displayName: 'Test get_agent_version.ps1'
       workingDirectory: '$(Build.SourcesDirectory)/scripts'
+      retryCountOnTaskFailure: 1
