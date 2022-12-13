@@ -33,7 +33,6 @@ jobs:
         vmImage: 'ubuntu-latest'
       Windows:
         vmImage: 'windows-latest'
-  displayName: 'Test ($(vmImage))'
 
   pool:
     name: 'Azure Pipelines'
@@ -41,6 +40,6 @@ jobs:
 
   steps:
     - pwsh: |
-        ./get-agent-version.yml
+        ./get_agent_version.ps1
       displayName: 'Test'
       workingDirectory: '$(Build.SourcesDirectory)/scripts'
