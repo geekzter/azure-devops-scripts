@@ -1,0 +1,46 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-${{ parameters.workspace }}-$(Build.BuildId)
+
+trigger: none
+
+pr:
+  autoCancel: false
+  branches:
+    include:
+    - '*'
+  drafts: false
+  paths:
+    exclude:
+    - '.devcontainer/**'  
+    - 'visuals/**'  
+    - '*.md'  
+
+schedules:
+- cron: '0 0 * * Mon,Tue,Wed,Thu,Fri'
+  displayName: 'Weekday build (UTC)'
+  # Run if there are no changes
+  always: 'true'
+  branches:
+    include:
+    - main
+
+jobs:
+- job: 'Test'
+  strategy:
+    matrix:
+      macOS:
+        vmImage: 'macos-latest'
+      Ubuntu:
+        vmImage: 'ubuntu-latest'
+      Windows:
+        vmImage: 'windows-latest'
+  displayName: 'Test ($(vmImage))'
+
+  pool:
+    name: 'Azure Pipelines'
+    vmImage: $(vmImage)
+
+  steps:
+    - pwsh: |
+        ./get-agent-version.yml
+      displayName: 'Test'
+      workingDirectory: '$(Build.SourcesDirectory)/scripts'
