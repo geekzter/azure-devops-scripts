@@ -1,3 +1,10 @@
+# This pipeline is for CI/CD
+parameters:
+- name: retryCount
+  displayName: Test retry count
+  type: number
+  default: 1
+
 name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-$(Build.BuildId)
 
 trigger: none
@@ -17,8 +24,7 @@ pr:
 schedules:
 - cron: '0 0 * * Mon,Tue,Wed,Thu,Fri'
   displayName: 'Weekday build (UTC)'
-  # Run if there are no changes
-  always: 'true'
+  always: 'true' # Run if there are no changes
   branches:
     include:
     - main
@@ -39,7 +45,8 @@ jobs:
     vmImage: $(vmImage)
 
   steps:
-    - pwsh: get_agent_version.ps1
+    - pwsh: |
+        ./get_agent_version.ps1
       displayName: 'Test get_agent_version.ps1'
       workingDirectory: '$(Build.SourcesDirectory)/scripts'
-      retryCountOnTaskFailure: 1
+      retryCountOnTaskFailure: ${{ parameters.retryCount }} # In case of GitHub rate limiting
