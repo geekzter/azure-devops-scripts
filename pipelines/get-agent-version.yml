@@ -1,0 +1,55 @@
+# This pipeline is for CI/CD
+parameters:
+- name: retryCount
+  displayName: Test retry count
+  type: number
+  default: 1
+
+name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-$(Build.BuildId)
+
+trigger: none
+
+pr:
+  autoCancel: false
+  branches:
+    include:
+    - '*'
+  drafts: false
+  paths:
+    exclude:
+    - '.devcontainer/**'  
+    - 'visuals/**'  
+    - '*.md'  
+
+schedules:
+- cron: '0 0 * * Mon,Tue,Wed,Thu,Fri'
+  displayName: 'Weekday build (UTC)'
+  always: 'true' # Run if there are no changes
+  branches:
+    include:
+    - main
+
+jobs:
+- job: 'Test'
+  strategy:
+    matrix:
+      macOS:
+        vmImage: 'macos-latest'
+      Ubuntu:
+        vmImage: 'ubuntu-latest'
+      Windows:
+        vmImage: 'windows-latest'
+
+  pool:
+    name: 'Azure Pipelines'
+    vmImage: $(vmImage)
+
+  steps:
+    - pwsh: |
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 2 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 2 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 3 -VersionPreference Prerelease
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 3 -VersionPreference Prerelease
+      displayName: 'Test get_agent_version.ps1'
+      workingDirectory: '$(Build.SourcesDirectory)/scripts'
+      retryCountOnTaskFailure: ${{ parameters.retryCount }} # In case of GitHub rate limiting
