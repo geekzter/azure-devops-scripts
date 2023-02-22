@@ -68,8 +68,9 @@ if (!$IsLinux) {
     sudo mkdir -p $pipelineDirectory 2>/dev/null
     sudo mkdir -p $pipelineWorkDirectory 2>/dev/null
     sudo ln -s $pipelineWorkDirectory $AGENT_DIRECTORY/_work
-    sudo chown -R $(id -u):$(id -g) $pipelineDirectory
-    sudo chown -R $(id -u):$(id -g) $pipelineWorkDirectory
+    $owner = "$(id -u):$(id -g)"
+    sudo chown -R $owner $pipelineDirectory
+    sudo chown -R $owner $pipelineWorkDirectory
 }
 
 Push-Location $pipelineDirectory 
