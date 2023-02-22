@@ -53,12 +53,25 @@ Write-Debug "Agent package URL: $agentPackageUrl"
 $agentPackageUrl -Split "/" | Select-Object -Last 1 | Set-Variable agentPackage
 Write-Debug "Agent package: $agentPackage"
 
-New-Item -ItemType directory -Path $pipelineDirectory -Force
-# New-Item -ItemType directory -Path $pipelineDirectory -Force -ErrorAction SilentlyContinue | Out-Null
-if (Test-Path (Join-Path $pipelineDirectory .agent)) {
-    Write-Host "Agent $AgentName already installed"
-    exit 1
+if (!$IsLinux) {
+    New-Item -ItemType directory -Path $pipelineDirectory -Force -ErrorAction SilentlyContinue | Out-Null
+    if (Test-Path (Join-Path $pipelineDirectory .agent)) {
+        Write-Host "Agent $AgentName already installed"
+        exit 1
+    }
+    New-Item -ItemType Directory -Path $pipelineWorkDirectory -Force -ErrorAction SilentlyContinue | Out-Null
+    Join-Path $pipelineDirectory _work | Set-Variable pipelineWorkDirectoryLink
+    if (!(Test-Path $pipelineWorkDirectoryLink)) {
+        New-Item -ItemType symboliclink -Path "${pipelineWorkDirectoryLink}" -Value "$pipelineWorkDirectory" -Force -ErrorAction SilentlyContinue | Out-Null
+    }    
+} else {
+    sudo mkdir -p $pipelineDirectory 2>/dev/null
+    sudo mkdir -p $pipelineWorkDirectory 2>/dev/null
+    sudo ln -s $pipelineWorkDirectory $AGENT_DIRECTORY/_work
+    sudo chown -R $(id -u):$(id -g) $pipelineDirectory
+    sudo chown -R $(id -u):$(id -g) $pipelineWorkDirectory
 }
+
 Push-Location $pipelineDirectory 
 
 Write-Host "Retrieving agent from ${agentPackageUrl}..."
@@ -71,13 +84,6 @@ if ($IsWindows) {
     tar zxf $agentPackage -C $pipelineDirectory
 }
 Write-Host "Extracted $agentPackage"
-
-# Use work directory that does not contain spaces, and is located at the designated OS location for data
-New-Item -ItemType Directory -Path $pipelineWorkDirectory -Force -ErrorAction SilentlyContinue | Out-Null
-Join-Path $pipelineDirectory _work | Set-Variable pipelineWorkDirectoryLink
-if (!(Test-Path $pipelineWorkDirectoryLink)) {
-    New-Item -ItemType symboliclink -Path "${pipelineWorkDirectoryLink}" -Value "$pipelineWorkDirectory" -Force -ErrorAction SilentlyContinue | Out-Null
-}
 
 # Log in with Azure CLI (if not logged in yet)
 Login-Az -DisplayMessages
