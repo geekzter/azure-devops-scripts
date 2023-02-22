@@ -100,6 +100,7 @@ Write-Debug "AAD Token length: $($aadToken.Length)"
 
 # Configure agent
 Write-Host "Creating agent '${AgentName}' and adding it to pool '${AgentPool}' in organization '${Organization}'..."
+Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token $aadToken --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
 . "$(Join-Path . $script)"  --unattended `
                             --url $OrganizationUrl `
                             --auth pat --token $aadToken `
