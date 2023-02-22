@@ -102,7 +102,7 @@ function Login-Az (
         $azureAccount = $null
     }
     if (-not $azureAccount) {
-        if ($env:CODESPACES -ieq "true") {
+        if ($IsLinux) {
             $azLoginSwitches = "--use-device-code"
         }
         if ($env:ARM_TENANT_ID) {

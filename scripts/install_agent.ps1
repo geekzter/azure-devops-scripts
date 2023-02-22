@@ -67,7 +67,7 @@ if (!$IsLinux) {
 } else {
     sudo mkdir -p $pipelineDirectory 2>/dev/null
     sudo mkdir -p $pipelineWorkDirectory 2>/dev/null
-    sudo ln -s $pipelineWorkDirectory $AGENT_DIRECTORY/_work
+    sudo ln -s $pipelineWorkDirectory $AGENT_DIRECTORY/_work 2>/dev/null
     $owner = "$(id -u):$(id -g)"
     sudo chown -R $owner $pipelineDirectory
     sudo chown -R $owner $pipelineWorkDirectory
