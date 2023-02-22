@@ -99,14 +99,13 @@ if (!$aadToken) {
 Write-Debug "AAD Token length: $($aadToken.Length)"
 
 # Configure agent
-Write-Host "Creating agent $AgentName and adding it to pool $AgentPool in organization $Organization..."
+Write-Host "Creating agent '${AgentName}' and adding it to pool '${AgentPool}' in organization '${Organization}'..."
 . "$(Join-Path . $script)"  --unattended `
                             --url $OrganizationUrl `
                             --auth pat --token $aadToken `
                             --pool $AgentPool `
                             --agent $AgentName --replace `
                             --acceptTeeEula `
-                            --runAsService `
                             --work $pipelineWorkDirectory
 
 Pop-Location
