@@ -2,12 +2,14 @@
 <# 
 .SYNOPSIS 
     Installs and configures Azure Pipeline Agent, using AAD authentication instead of PAT
+.DESCRIPTION 
+    Installs and configures Azure Pipeline Agent, without any prompts if $env:AZDO_ORG_SERVICE_URL is set and Azure CLI is logged in.
 #> 
 param ( 
     [parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
     [string]
-    $AgentName=$env:COMPUTERNAME,
+    $AgentName=[environment]::MachineName,
     
     [parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
@@ -33,14 +35,17 @@ param (
 if ($IsWindows) {
     Join-Path $env:ProgramFiles pipeline-agent | Set-Variable pipelineDirectory
     $pipelineWorkDirectory = "${env:ProgramData}\pipeline-agent\work"
+    $script = "config.cmd"
 }
 if ($IsLinux) {
     $pipelineDirectory = "/opt/pipeline-agent"
     $pipelineWorkDirectory = "/var/opt/pipeline-agent/work"
+    $script = "config.sh"
 }
 if ($IsMacOS) {
     $pipelineDirectory = "~/pipeline-agent"
     $pipelineWorkDirectory = "~/pipeline-agent/work"
+    $script = "config.sh"
 }
 
 Get-AgentPackageUrl | Set-Variable agentPackageUrl
@@ -85,15 +90,15 @@ if (!$aadToken) {
 }
 Write-Debug "AAD Token length: $($aadToken.Length)"
 
-# # Configure agent
-# Write-Host "Creating agent $AgentName and adding it to pool $AgentPool in organization $Organization..."
-# .\${script}  --unattended `
-#              --url $OrganizationUrl `
-#              --auth pat --token $aadToken `
-#              --pool $AgentPool `
-#              --agent $AgentName --replace `
-#              --acceptTeeEula `
-#              --runAsService `
-#              --work $pipelineWorkDirectory
+# Configure agent
+Write-Host "Creating agent $AgentName and adding it to pool $AgentPool in organization $Organization..."
+. "$(Join-Path . $script)"  --unattended `
+                            --url $OrganizationUrl `
+                            --auth pat --token $aadToken `
+                            --pool $AgentPool `
+                            --agent $AgentName --replace `
+                            --acceptTeeEula `
+                            --runAsService `
+                            --work $pipelineWorkDirectory
 
 Pop-Location
