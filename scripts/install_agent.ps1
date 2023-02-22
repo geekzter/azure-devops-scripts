@@ -32,6 +32,11 @@ param (
 
 . (Join-Path $PSScriptRoot functions.ps1)
 
+if (!$OrganizationUrl) {
+    Write-Warning "Organization URL not set. Please set the AZDO_ORG_SERVICE_URL environment variable or pass the OrganizationUrl parameter."
+    exit 1
+}
+
 if ($IsWindows) {
     Join-Path $env:ProgramFiles pipeline-agent | Set-Variable pipelineDirectory
     $pipelineWorkDirectory = "${env:ProgramData}\pipeline-agent\work"
