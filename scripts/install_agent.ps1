@@ -53,7 +53,8 @@ Write-Debug "Agent package URL: $agentPackageUrl"
 $agentPackageUrl -Split "/" | Select-Object -Last 1 | Set-Variable agentPackage
 Write-Debug "Agent package: $agentPackage"
 
-New-Item -ItemType directory -Path $pipelineDirectory -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType directory -Path $pipelineDirectory -Force
+# New-Item -ItemType directory -Path $pipelineDirectory -Force -ErrorAction SilentlyContinue | Out-Null
 if (Test-Path (Join-Path $pipelineDirectory .agent)) {
     Write-Host "Agent $AgentName already installed"
     exit 1
