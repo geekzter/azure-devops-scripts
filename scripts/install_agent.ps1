@@ -48,8 +48,8 @@ if ($IsLinux) {
     $script = "config.sh"
 }
 if ($IsMacOS) {
-    Resolve-Path "~/pipeline-agent" | Select-Object -ExpandProperty Path | Set-Variable pipelineDirectory
-    Resolve-Path "~/pipeline-agent/work" | Select-Object -ExpandProperty Path | Set-Variable pipelineWorkDirectory
+    Join-Path $env:HOME pipeline-agent | Set-Variable pipelineDirectory
+    Join-Path $env:HOME pipeline-agent/work | Set-Variable pipelineWorkDirectory
     $script = "config.sh"
 }
 Write-Debug "Pipeline agent directory: '${pipelineDirectory}'"
@@ -70,18 +70,29 @@ if ($Remove) {
 
         Get-AccessToken | Set-Variable aadToken
 
+        Write-Verbose "Removing agent..."
         . "$(Join-Path . $script)" remove --auth PAT --token $aadToken 
 
+        if (Test-Path (Join-Path $pipelineDirectory $script )) {
+            Write-Verbose "Removing agent directory '${pipelineDirectory}'..."
+            Remove-Item $pipelineDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $pipelineWorkDirectory) {
+            Write-Verbose "Removing agent work directory '${pipelineWorkDirectory}'..."
+            Remove-Item $pipelineWorkDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        }
     } finally {
         Pop-Location
     }
 } else {
     if (!$IsLinux) {
+        Write-Verbose "Creating pipeline agent directory '${pipelineDirectory}'"
         New-Item -ItemType directory -Path $pipelineDirectory -Force -ErrorAction SilentlyContinue | Out-Null
         if (Test-Path (Join-Path $pipelineDirectory .agent)) {
             Write-Host "Agent $AgentName already installed"
             exit 1
         }
+        Write-Verbose "Creating pipeline agent work directory '${pipelineWorkDirectory}'"
         New-Item -ItemType Directory -Path $pipelineWorkDirectory -Force -ErrorAction SilentlyContinue | Out-Null
         Join-Path $pipelineDirectory _work | Set-Variable pipelineWorkDirectoryLink
         if (!(Test-Path $pipelineWorkDirectoryLink)) {
