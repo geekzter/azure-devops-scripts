@@ -51,16 +51,19 @@ if ($IsMacOS) {
     $pipelineWorkDirectory = "~/pipeline-agent/work"
     $script = "config.sh"
 }
+Write-Debug "Pipeline agent directory: '${pipelineDirectory}'"
+Write-Debug "Pipeline agent work directory: '${pipelineWorkDirectory}'"
+Write-Debug "Pipeline agent script: '${script}'"
 
 if ($Remove) {
     if (!(Test-Path $pipelineDirectory)) {
-        Write-Warning "Pipeline agent not found in expected location (${pipelineDirectory}), exiting"
+        Write-Warning "Pipeline agent not found in expected location '${pipelineDirectory}', exiting"
         exit 1
     }
     try {
         Push-Location $pipelineDirectory 
         if (!(Test-Path $script)) {
-            Write-Warning "Script ${script} not found in expected location (${pipelineDirectory}), exiting"
+            Write-Warning "Script '${script}' not found in expected location '${pipelineDirectory}', exiting"
             exit 1
         }
 
@@ -97,37 +100,38 @@ if ($Remove) {
         Push-Location $pipelineDirectory 
     
         Get-AgentPackageUrl | Set-Variable agentPackageUrl
-        Write-Debug "Agent package URL: $agentPackageUrl"
-        $agentPackageUrl -Split "/" | Select-Object -Last 1 | Set-Variable agentPackage
-        Write-Debug "Agent package: $agentPackage"
+        Write-Debug "Agent package URL: '${agentPackageUrl}'"
+        $agentPackageUrl -Split '/' | Select-Object -Last 1 | Set-Variable agentPackage
+        Write-Debug "Agent package: '${agentPackage}'"
         
-        Write-Host "Retrieving agent from ${agentPackageUrl}..."
+        Write-Host "Retrieving agent from '${agentPackageUrl}'..."
         Invoke-Webrequest -Uri $agentPackageUrl -OutFile $agentPackage -UseBasicParsing
         
-        Write-Host "Extracting $agentPackage in ${pipelineDirectory}..."
+        Write-Host "Extracting '${agentPackage}' in '${pipelineDirectory}'..."
         if ($IsWindows) {
             Expand-Archive -Path $agentPackage -DestinationPath $pipelineDirectory
         } else {
             tar zxf $agentPackage -C $pipelineDirectory
         }
-        Write-Host "Extracted $agentPackage"
+        Write-Host "Extracted '${agentPackage}' in '${pipelineDirectory}'"
         
         Get-AccessToken | Set-Variable aadToken
         if (!$OrganizationUrl) {
             $env:AZURE_DEVOPS_EXT_PAT = $aadToken
-            Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable"
-            Write-Host "Trying Azure DevOps CLI to determine organization URL..."
+            Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable, trying to infer..."
+            Write-Verbose "az devops configure --list"
             az devops configure -l | Select-String -Pattern '^organization = (?<org>.+)$' | Set-Variable result
             if ($result) {
                 $OrganizationUrl = $result.Matches.Groups[1].Value
             }
             if ($OrganizationUrl) {
-                Write-Host "Using organization URL set with 'az devops configure' : $OrganizationUrl"
+                Write-Host "Using organization URL set with 'az devops configure' : '${OrganizationUrl}'"
             } else {
+                Write-Debug "az account show --query 'user.name' -o tsv"
                 (az account show --query "user.name" -o tsv) -split '@' | Select-Object -First 1 | Set-Variable alias
                 if ($alias) {
                     $OrganizationUrl = "https://dev.azure.com/${alias}"
-                    Write-Host "Using user alias as organization name : $OrganizationUrl"
+                    Write-Host "Using user alias as organization name : '${OrganizationUrl}'"
                 } else {
                     Write-Warning "Unable to determine Organization URL. Use the OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable to set it."
                     exit 1

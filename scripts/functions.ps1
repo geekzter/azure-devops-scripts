@@ -1,6 +1,7 @@
 function Get-AccessToken () {
     # Log in with Azure CLI (if not logged in yet)
     Login-Az -DisplayMessages
+    Write-Debug "az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798"
     az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                                 --query "accessToken" `
                                 --output tsv `
@@ -27,7 +28,6 @@ function Get-AgentPackageUrl (
     [int]
     $MajorVersion=2
 ) {
-
     (Invoke-RestMethod -Uri https://api.github.com/repos/microsoft/azure-pipelines-agent/releases) `
                        | Where-Object {!$_.draft} `
                        | Where-Object {$_.name -match "^v${MajorVersion}"} `
@@ -36,25 +36,25 @@ function Get-AgentPackageUrl (
     switch ($VersionPreference) {
         "Previous" {
             $releases | Where-Object {!$_.prerelease} `
-                    | Select-Object -Skip 1 -First 1 `
-                    | Set-Variable release
+                      | Select-Object -Skip 1 -First 1 `
+                      | Set-Variable release
             break
         }
         default { # Latest
             $releases | Where-Object {!$_.prerelease} `
-                    | Select-Object -Skip 0 -First 1 `
-                    | Set-Variable release
+                      | Select-Object -Skip 0 -First 1 `
+                      | Set-Variable release
             break
         }
         "Prerelease" {
             $releases | Select-Object -Skip 0 -First 1 `
-                    | Set-Variable release
+                      | Set-Variable release
             break
         }
     }
 
     if (!$release) {
-        Write-Warning "No agent release found for v${MajorVersion}, '${VersionPreference}' VersionPreference"
+        Write-Warning "Agent VersionPreference '${VersionPreference}' release v${MajorVersion} not found, exiting"
         exit
     }
     $release | Format-List | Out-String | Write-Debug
@@ -120,8 +120,10 @@ function Login-Az (
             $azLoginSwitches = "--use-device-code"
         }
         if ($env:ARM_TENANT_ID) {
+            Write-Debug "az login -t ${env:ARM_TENANT_ID} -o none $($azLoginSwitches)"
             az login -t $env:ARM_TENANT_ID -o none $($azLoginSwitches)
         } else {
+            Write-Debug "az login -o none $($azLoginSwitches)"
             az login -o none $($azLoginSwitches)
         }
     }
