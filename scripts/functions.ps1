@@ -139,7 +139,7 @@ function Remove-Directory (
     while ((Test-Path($Path)) -and ($tries -le $MaxTries)) {
         Write-Host "." -NoNewLine
         if (Get-Command rm -ErrorAction SilentlyContinue) {
-            rm -r $Path
+            rm -r $Path 2>$null
         } else {
             Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
             Get-ChildItem -Path $Path -Include * -Recurse | Remove-Item -Force
