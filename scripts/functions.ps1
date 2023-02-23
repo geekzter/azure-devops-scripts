@@ -151,9 +151,9 @@ function Remove-Directory (
         $tries++
     }
     if (Test-Path($Path)) {
-        Write-Host "✘"
+        Write-Host "✗"
         Write-Warning "Could not remove directory '${Path}' after ${tries} tries"
     } else {
-        Write-Host "✔"
+        Write-Host "✓"
     }
 }
