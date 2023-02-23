@@ -72,15 +72,9 @@ if ($Remove) {
 
         Write-Verbose "Removing agent..."
         . "$(Join-Path . $script)" remove --auth PAT --token $aadToken 
-
-        if (Test-Path (Join-Path $pipelineDirectory $script )) {
-            Write-Verbose "Removing agent directory '${pipelineDirectory}'..."
-            Remove-Item $pipelineDirectory -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        if (Test-Path $pipelineWorkDirectory) {
-            Write-Verbose "Removing agent work directory '${pipelineWorkDirectory}'..."
-            Remove-Item $pipelineWorkDirectory -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        
+        Remove-Directory $pipelineWorkDirectory
+        Remove-Directory $pipelineDirectory
     } finally {
         Pop-Location
     }
@@ -136,7 +130,7 @@ if ($Remove) {
                 Write-Host "Adding Azure CLI extension 'azure-devops'..."
                 az extension add -n azure-devops -y
             }
-            Write-Verbose "az devops configure --list"
+            Write-Debug "az devops configure --list"
             az devops configure -l | Select-String -Pattern '^organization = (?<org>.+)$' | Set-Variable result
             if ($result) {
                 $OrganizationUrl = $result.Matches.Groups[1].Value

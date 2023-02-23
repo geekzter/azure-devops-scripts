@@ -128,3 +128,29 @@ function Login-Az (
         }
     }
 }
+
+function Remove-Directory (
+    [parameter(Mandatory=$true)][string]$Path,
+    [parameter(Mandatory=$false)][int]$Interval=5,
+    [parameter(Mandatory=$false)][int]$MaxTries=25
+) {
+    $tries = 0
+    Write-Host "Removing agent work directory '${pipelineWorkDirectory}'" -NoNewLine
+    while ((Test-Path($Path)) -and ($tries -le $MaxTries)) {
+        Write-Host "." -NoNewLine
+        # Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+        # Get-ChildItem -Path $Path -Include * -Recurse | Remove-Item -Force
+        rm -r $Path
+        if (Test-Path($Path)) {
+            Write-Verbose "File locked, trying again in ${Interval} seconds..."
+            Start-Sleep -seconds $Interval
+        }
+        $tries++
+    }
+    if (Test-Path($Path)) {
+        Write-Host "✘"
+        Write-Warning "Could not remove directory '${Path}' after ${tries} tries"
+    } else {
+        Write-Host "✔"
+    }
+}
