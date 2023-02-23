@@ -1,9 +1,10 @@
 #!/usr/bin/env pwsh
 <# 
 .SYNOPSIS 
-    Installs and configures Azure Pipeline Agent, using AAD authentication instead of PAT
+    Installs and configures Azure Pipeline Agent
 .DESCRIPTION 
-    Installs and configures Azure Pipeline Agent, without any prompts if $env:AZDO_ORG_SERVICE_URL is set and Azure CLI is logged in.
+    Installs and configures Azure Pipeline Agent. 
+    All arguments are optional, as this script tries to infer as much as possible from the environment.
 #> 
 param ( 
     [parameter(Mandatory=$false)]
@@ -33,7 +34,7 @@ param (
     [switch]
     $Remove
 ) 
-
+Write-Verbose $MyInvocation.line 
 . (Join-Path $PSScriptRoot functions.ps1)
 
 if ($IsWindows) {
@@ -47,8 +48,8 @@ if ($IsLinux) {
     $script = "config.sh"
 }
 if ($IsMacOS) {
-    $pipelineDirectory = "~/pipeline-agent"
-    $pipelineWorkDirectory = "~/pipeline-agent/work"
+    Resolve-Path "~/pipeline-agent" | Select-Object -ExpandProperty Path | Set-Variable pipelineDirectory
+    Resolve-Path "~/pipeline-agent/work" | Select-Object -ExpandProperty Path | Set-Variable pipelineWorkDirectory
     $script = "config.sh"
 }
 Write-Debug "Pipeline agent directory: '${pipelineDirectory}'"
@@ -104,7 +105,7 @@ if ($Remove) {
         $agentPackageUrl -Split '/' | Select-Object -Last 1 | Set-Variable agentPackage
         Write-Debug "Agent package: '${agentPackage}'"
         
-        Write-Host "Retrieving agent from '${agentPackageUrl}'..."
+        Write-Host "Retrieving agent to '${pipelineDirectory}' from '${agentPackageUrl}'..."
         Invoke-Webrequest -Uri $agentPackageUrl -OutFile $agentPackage -UseBasicParsing
         
         Write-Host "Extracting '${agentPackage}' in '${pipelineDirectory}'..."
