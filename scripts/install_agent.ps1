@@ -93,6 +93,7 @@ if ($Remove) {
     }
     
     try {
+        $presetToken = $env:AZURE_DEVOPS_EXT_PAT
         Push-Location $pipelineDirectory 
     
         Get-AgentPackageUrl | Set-Variable agentPackageUrl
@@ -112,7 +113,6 @@ if ($Remove) {
         Write-Host "Extracted $agentPackage"
         
         Get-AccessToken | Set-Variable aadToken
-        $presetToken = $env:AZURE_DEVOPS_EXT_PAT
         if (!$OrganizationUrl) {
             $env:AZURE_DEVOPS_EXT_PAT = $aadToken
             Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable"
