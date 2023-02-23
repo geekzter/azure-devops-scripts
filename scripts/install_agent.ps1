@@ -120,6 +120,10 @@ if ($Remove) {
         if (!$OrganizationUrl) {
             $env:AZURE_DEVOPS_EXT_PAT = $aadToken
             Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable, trying to infer..."
+            if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
+                Write-Host "Adding Azure CLI extension 'azure-devops'..."
+                az extension add -n azure-devops -y
+            }
             Write-Verbose "az devops configure --list"
             az devops configure -l | Select-String -Pattern '^organization = (?<org>.+)$' | Set-Variable result
             if ($result) {
