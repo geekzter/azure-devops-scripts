@@ -1,3 +1,19 @@
+function Get-AccessToken () {
+    # Log in with Azure CLI (if not logged in yet)
+    Login-Az -DisplayMessages
+    az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
+                                --query "accessToken" `
+                                --output tsv `
+                                | Set-Variable aadToken
+    if (!$aadToken) {
+        Write-Warning "Could not obtain AAD token, exiting"
+        exit 1
+    }
+    Write-Debug "AAD Token length: $($aadToken.Length)"
+
+    return $aadToken
+}
+
 function Get-AgentPackageUrl (
     [parameter(Mandatory=$false)][switch]
     $ExcludeNode6,
