@@ -36,11 +36,6 @@ param (
 
 . (Join-Path $PSScriptRoot functions.ps1)
 
-if (!$OrganizationUrl) {
-    Write-Warning "Organization URL not set. Please set the AZDO_ORG_SERVICE_URL environment variable or pass the OrganizationUrl parameter."
-    exit 1
-}
-
 if ($IsWindows) {
     Join-Path $env:ProgramFiles pipeline-agent | Set-Variable pipelineDirectory
     $pipelineWorkDirectory = "${env:ProgramData}\pipeline-agent\work"
@@ -117,10 +112,32 @@ if ($Remove) {
         Write-Host "Extracted $agentPackage"
         
         Get-AccessToken | Set-Variable aadToken
+        $presetToken = $env:AZURE_DEVOPS_EXT_PAT
+        if (!$OrganizationUrl) {
+            $env:AZURE_DEVOPS_EXT_PAT = $aadToken
+            Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable"
+            Write-Host "Trying Azure DevOps CLI to determine organization URL..."
+            az devops configure -l | Select-String -Pattern '^organization = (?<org>.+)$' | Set-Variable result
+            if ($result) {
+                $OrganizationUrl = $result.Matches.Groups[1].Value
+            }
+            if ($OrganizationUrl) {
+                Write-Host "Using organization URL set with 'az devops configure' : $OrganizationUrl"
+            } else {
+                (az account show --query "user.name" -o tsv) -split '@' | Select-Object -First 1 | Set-Variable alias
+                if ($alias) {
+                    $OrganizationUrl = "https://dev.azure.com/${alias}"
+                    Write-Host "Using user alias as organization name : $OrganizationUrl"
+                } else {
+                    Write-Warning "Unable to determine Organization URL. Use the OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable to set it."
+                    exit 1
+                }
+            }
+        }
         
         # Configure agent
-        Write-Host "Creating agent '${AgentName}' and adding it to pool '${AgentPool}' in organization '${Organization}'..."
-        Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token $aadToken --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
+        Write-Host "Creating agent '${AgentName}' and adding it to pool '${AgentPool}' in organization '${OrganizationUrl}'..."
+        Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token '***' --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
         . "$(Join-Path . $script)"  --unattended `
                                     --url $OrganizationUrl `
                                     --auth pat --token $aadToken `
@@ -129,6 +146,7 @@ if ($Remove) {
                                     --acceptTeeEula `
                                     --work $pipelineWorkDirectory    
     } finally {
+        $env:AZURE_DEVOPS_EXT_PAT = $presetToken
         Pop-Location
     }
 }
