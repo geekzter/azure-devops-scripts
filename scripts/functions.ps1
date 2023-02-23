@@ -138,9 +138,12 @@ function Remove-Directory (
     Write-Host "Removing agent work directory '${pipelineWorkDirectory}'" -NoNewLine
     while ((Test-Path($Path)) -and ($tries -le $MaxTries)) {
         Write-Host "." -NoNewLine
-        # Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
-        # Get-ChildItem -Path $Path -Include * -Recurse | Remove-Item -Force
-        rm -r $Path
+        if (Get-Command rm -ErrorAction SilentlyContinue) {
+            rm -r $Path
+        } else {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -Path $Path -Include * -Recurse | Remove-Item -Force
+        }
         if (Test-Path($Path)) {
             Write-Verbose "File locked, trying again in ${Interval} seconds..."
             Start-Sleep -seconds $Interval
