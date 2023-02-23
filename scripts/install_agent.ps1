@@ -85,6 +85,7 @@ if ($Remove) {
         New-Item -ItemType Directory -Path $pipelineWorkDirectory -Force -ErrorAction SilentlyContinue | Out-Null
         Join-Path $pipelineDirectory _work | Set-Variable pipelineWorkDirectoryLink
         if (!(Test-Path $pipelineWorkDirectoryLink)) {
+            Write-Debug "Creating symbolic link from '${pipelineWorkDirectoryLink}' to '${pipelineWorkDirectory}'"
             New-Item -ItemType symboliclink -Path "${pipelineWorkDirectoryLink}" -Value "$pipelineWorkDirectory" -Force -ErrorAction SilentlyContinue | Out-Null
         }    
     } else {
