@@ -25,6 +25,10 @@ param (
     [parameter(Mandatory=$false)][switch]
     $ExcludeNode6,
 
+    [parameter(Mandatory=$false,HelpMessage="Azure DevOps token, if not provided will be inferred from environment")]
+    [string]
+    $Token,
+
     [parameter(Mandatory=$false)]
     [ValidateNotNullOrEmpty()]
     [string]
@@ -68,7 +72,7 @@ if ($Remove) {
             exit 1
         }
 
-        Get-AccessToken | Set-Variable aadToken
+        Get-AccessToken -Token $Token | Set-Variable aadToken
 
         Write-Verbose "Removing agent..."
         . "$(Join-Path . $script)" remove --auth PAT --token $aadToken 
@@ -122,7 +126,7 @@ if ($Remove) {
         }
         Write-Host "Extracted '${agentPackage}' in '${pipelineDirectory}'"
         
-        Get-AccessToken | Set-Variable aadToken
+        Get-AccessToken -Token $Token | Set-Variable aadToken
         if (!$OrganizationUrl) {
             $env:AZURE_DEVOPS_EXT_PAT = $aadToken
             Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable, trying to infer..."
