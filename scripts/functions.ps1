@@ -1,4 +1,4 @@
-function Get-AccessToken () {
+function Get-AADAccessToken () {
     # Log in with Azure CLI (if not logged in yet)
     Login-Az -DisplayMessages
     Write-Debug "az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798"
@@ -7,12 +7,42 @@ function Get-AccessToken () {
                                 --output tsv `
                                 | Set-Variable aadToken
     if (!$aadToken) {
-        Write-Warning "Could not obtain AAD token, exiting"
-        exit 1
+        Write-Warning "Could not obtain AAD token"
+        return $null
     }
     Write-Debug "AAD Token: $($aadToken -replace '.','*')"
 
     return $aadToken
+}
+
+function Get-AccessToken (
+    [parameter(Mandatory=$false)]
+    [string]
+    $Token
+) {
+    if ($Token) {
+        Write-Verbose "Using Token parameter"
+    } elseif ($env:AZURE_DEVOPS_EXT_PAT) {
+        Write-Verbose "Using AZURE_DEVOPS_EXT_PAT environment variable"
+        $Token = $env:AZURE_DEVOPS_EXT_PAT
+    } elseif ($env:AZDO_PERSONAL_ACCESS_TOKEN) {
+        Write-Verbose "Using AZDO_PERSONAL_ACCESS_TOKEN environment variable"
+        $Token = $env:AZDO_PERSONAL_ACCESS_TOKEN
+    } elseif (Get-Command az -ErrorAction SilentlyContinue) {
+        Write-Verbose "Using Azure CLI"
+        $Token = (Get-AADAccessToken)
+    } elseif ($env:SYSTEM_ACCESSTOKEN) {
+        Write-Verbose "Using SYSTEM_ACCESSTOKEN environment variable"
+        $Token = $env:SYSTEM_ACCESSTOKEN
+    }
+    if ($Token) {
+        Write-Verbose "Access token: $($token -replace '.','*')"
+        Write-Debug "Access token: ${token}"
+        return $Token
+    } else {
+        Write-Warning "No access token found, exiting"
+        exit 1
+    }
 }
 
 function Get-AgentPackageUrl (
