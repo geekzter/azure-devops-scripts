@@ -11,6 +11,10 @@ param (
 
     [parameter(Mandatory=$false)]
     [switch]
+    $AzureTasksOnly,
+
+    [parameter(Mandatory=$false)]
+    [switch]
     $DeprecatedTasksOnly,
 
     [parameter(Mandatory=$false)]
@@ -42,6 +46,8 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
     $_
 } | Set-Variable tasks
 
+# TODO: AzureTasksOnly
+#       inputs['azureSubscriptionEndpoint']?.type == "connectedService:AzureRM"
 if ($ShowTaskIdsOnly) {
     $tasks | Select-Object -ExpandProperty id | Get-Unique
 } else {
