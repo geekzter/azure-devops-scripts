@@ -36,6 +36,9 @@ param (
     [ValidateNotNullOrEmpty()]
     $Project
 ) 
+Write-Verbose $MyInvocation.line 
+. (Join-Path $PSScriptRoot functions.ps1)
+
 $OrganizationUrl = $OrganizationUrl.ToString().Trim('/') # Strip trailing '/'
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
 
@@ -44,13 +47,14 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if (!(az account show 2>$null)) {
-    az login -o none
+az account show 2>$null | ConvertFrom-Json | Set-Variable subscription
+if (!$subscription) {
+    az login -o json | ConvertFrom-Json | Set-Variable subscription
 }
 if ($SubscriptionId) {
     az account set --subscription $SubscriptionId
 } else {
-    $SubscriptionId = $(az account show --query id -o tsv)
+    $SubscriptionId = $subscription.id
 }
 
 az identity create -n $IdentityName `
@@ -59,7 +63,6 @@ az identity create -n $IdentityName `
                    -o json `
                    | ConvertFrom-Json `
                    | Set-Variable identity
-$identity | Format-List -Property id, clientId, tenantId
 
 az role assignment create --assignee $identity.clientId `
                           --role Contributor `
@@ -73,13 +76,51 @@ az identity federated-credential create --name $IdentityName `
                                         --resource-group $ResourceGroupName `
                                         --issuer https://app.vstoken.visualstudio.com `
                                         --subject $federatedSubject `
-                                        --subscription $SubscriptionId
+                                        --subscription $SubscriptionId `
+                                        -o none
+$identity | Add-Member -NotePropertyName federatedSubject -NotePropertyValue $federatedSubject
+$identity | Add-Member -NotePropertyName subscriptionId   -NotePropertyValue $SubscriptionId
+$identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
 
+# Log in to Azure DevOps
+$token = Get-AccessToken
+$token | az devops login --organization $OrganizationUrl
+az devops configure --defaults organization=$OrganizationUrl
+az devops project show --project PipelineSamples --query id -o tsv | Set-Variable projectId
+
+# TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
 #                                           --azure-rm-subscription-id $SubscriptionId `
 #                                           --azure-rm-subscription-name $SubscriptionId `
 #                                           --azure-rm-tenant-id $identity.tenantId `
 #                                           --name $IdentityName `
-#                                           --organization https://dev.azure.com/$env:SYSTEM_COLLECTIONURI `
-#                                           --project $env:SYSTEM_TEAMPROJECT `
+#                                           --organization $OrganizationUrl `
+#                                           --project $Project `
                                         
+# Prepare service connection REST API request body
+Get-Content -Path (Join-Path $PSScriptRoot serviceEndpointRequest.json) `
+            | ConvertFrom-Json `
+            | Set-Variable serviceEndpointRequest
+
+$serviceEndpointRequest.authorization.parameters.servicePrincipalId = $identity.clientId
+$serviceEndpointRequest.authorization.parameters.tenantId = $identity.tenantId
+$serviceEndpointRequest.data.subscriptionId = $SubscriptionId
+$serviceEndpointRequest.data.subscriptionName = $subscription.name
+$serviceEndpointRequest.name = $subscription.name
+$serviceEndpointRequest.serviceEndpointProjectReferences[0].description = "Created with $($MyInvocation.MyCommand.Name)"
+$serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $subscription.name
+$serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id = $projectId
+$serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
+$serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable body
+
+$headers = @{
+    "Content-Type"  = "application/json"
+    "Authorization" = "Bearer $token"
+}
+Invoke-RestMethod -Uri "${OrganizationUrl}/_apis/serviceendpoint/endpoints?api-version=7.1-preview.4" `
+                  -Method 'POST' `
+                  -Headers $headers `
+                  -Body $body `
+                  | Set-Variable response
+
+$response | ConvertTo-Json
