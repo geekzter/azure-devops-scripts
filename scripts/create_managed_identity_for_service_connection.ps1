@@ -51,6 +51,7 @@ az account show 2>$null | ConvertFrom-Json | Set-Variable subscription
 if (!$subscription) {
     az login -o json | ConvertFrom-Json | Set-Variable subscription
 }
+$subscription | Format-List | Out-String | Write-Debug
 if ($SubscriptionId) {
     az account set --subscription $SubscriptionId
 } else {
@@ -81,12 +82,21 @@ az identity federated-credential create --name $IdentityName `
 $identity | Add-Member -NotePropertyName federatedSubject -NotePropertyValue $federatedSubject
 $identity | Add-Member -NotePropertyName subscriptionId   -NotePropertyValue $SubscriptionId
 $identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
+$identity | Format-List | Out-String | Write-Debug
 
 # Log in to Azure DevOps
-$token = Get-AccessToken
-$token | az devops login --organization $OrganizationUrl
+az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
+                            --query "accessToken" `
+                            --output tsv `
+                            | Tee-Object -Variable token `
+                            | az devops login --organization $OrganizationUrl
 az devops configure --defaults organization=$OrganizationUrl
 az devops project show --project PipelineSamples --query id -o tsv | Set-Variable projectId
+
+az devops service-endpoint list -p PipelineSamples `
+                                --query "[?name=='Build_Eng'].id" `
+                                -o tsv `
+                                | Set-Variable serviceEndpointId
 
 # TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
@@ -113,12 +123,21 @@ $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id 
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
 $serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable body
 
+$apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
+if (!$serviceEndpointId) {
+    Write-Verbose "Creating service connection '$($serviceEndpointRequest.name)'..."
+} else {
+    $apiUri += "/${serviceEndpointId}"
+    Write-Verbose "Updating service connection '$($serviceEndpointRequest.name)' (${serviceEndpointId})..."
+}
+$apiUri += "?api-version=7.1-preview.4"
+
 $headers = @{
     "Content-Type"  = "application/json"
     "Authorization" = "Bearer $token"
 }
-Invoke-RestMethod -Uri "${OrganizationUrl}/_apis/serviceendpoint/endpoints?api-version=7.1-preview.4" `
-                  -Method 'POST' `
+Invoke-RestMethod -Uri $apiUri `
+                  -Method ($serviceEndpointId ? 'PUT' : 'POST') `
                   -Headers $headers `
                   -Body $body `
                   | Set-Variable response
