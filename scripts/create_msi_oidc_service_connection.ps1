@@ -1,13 +1,13 @@
 #!/usr/bin/env pwsh
-
 <# 
 .SYNOPSIS 
-    
- 
+    Create a Service Connection in Azure DevOps that uses a Managed Identity and Workload Identity fderation to authenticate to Azure.
+
 .DESCRIPTION 
+    Creates a Managed Identiy, sets up a federation subject on the Managed Identity for a Service Connection, creates the Service Connection, and grants the Managed Identity the Contributor role on the subscription.
 
 .EXAMPLE
-
+    ./create_msi_oidc_service_connection.ps1 -IdentityName my-identity -ResourceGroupName ericvan-common -Project PipelineSamples
 #> 
 #Requires -Version 7
 
