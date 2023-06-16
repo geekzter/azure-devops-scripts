@@ -12,9 +12,8 @@
 #Requires -Version 7
 
 param ( 
-    [parameter(Mandatory=$true,HelpMessage="Name of the Managed Identity")]
+    [parameter(Mandatory=$false,HelpMessage="Name of the Managed Identity")]
     [string]
-    [ValidateNotNullOrEmpty()]
     $IdentityName,
 
     [parameter(Mandatory=$true,HelpMessage="Name of the Azure Resource Group")]
@@ -26,22 +25,24 @@ param (
     [guid]
     $SubscriptionId,
 
-    [parameter(Mandatory=$false,HelpMessage="Url of the Azure DevOps Organization")]
-    [uri]
-    [ValidateNotNullOrEmpty()]
-    $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL || $env:SYSTEM_COLLECTIONURI),
+    [parameter(Mandatory=$false,HelpMessage="Name of the Service Connection")]
+    [string]
+    $ServiceConnectionName,
 
     [parameter(Mandatory=$true,HelpMessage="Name of the Azure DevOps Project")]
     [string]
     [ValidateNotNullOrEmpty()]
-    $Project
+    $Project,
+
+    [parameter(Mandatory=$false,HelpMessage="Url of the Azure DevOps Organization")]
+    [uri]
+    [ValidateNotNullOrEmpty()]
+    $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL || $env:SYSTEM_COLLECTIONURI)
 ) 
 Write-Verbose $MyInvocation.line 
 . (Join-Path $PSScriptRoot functions.ps1)
 $apiVersion = "7.1-preview.4"
 
-$OrganizationUrl = $OrganizationUrl.ToString().Trim('/') # Strip trailing '/'
-$organizationName = $OrganizationUrl.ToString().Split('/')[3]
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     Write-Error "Azure CLI is not installed. Please install it from https://docs.microsoft.com/cli/azure/install-azure-cli"
@@ -55,8 +56,18 @@ if (!$subscription) {
 $subscription | Format-List | Out-String | Write-Debug
 if ($SubscriptionId) {
     az account set --subscription $SubscriptionId
+    az account show 2>$null | ConvertFrom-Json | Set-Variable subscription
 } else {
     $SubscriptionId = $subscription.id
+}
+
+$OrganizationUrl = $OrganizationUrl.ToString().Trim('/') # Strip trailing '/'
+$organizationName = $OrganizationUrl.ToString().Split('/')[3]
+if (!$ServiceConnectionName) {
+    $ServiceConnectionName = $subscription.name
+}
+if (!$IdentityName) {
+    $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
 }
 
 az identity create -n $IdentityName `
@@ -72,7 +83,7 @@ az role assignment create --assignee $identity.clientId `
                           --subscription $SubscriptionId `
                           -o none
 
-$federatedSubject = "sc://${organizationName}/${Project}/${IdentityName}"
+$federatedSubject = "sc://${organizationName}/${Project}/${ServiceConnectionName}"
 az identity federated-credential create --name $IdentityName `
                                         --identity-name $IdentityName  `
                                         --resource-group $ResourceGroupName `
@@ -95,7 +106,7 @@ az devops configure --defaults organization=$OrganizationUrl
 az devops project show --project PipelineSamples --query id -o tsv | Set-Variable projectId
 
 az devops service-endpoint list -p PipelineSamples `
-                                --query "[?name=='Build_Eng'].id" `
+                                --query "[?name=='${ServiceConnectionName}'].id" `
                                 -o tsv `
                                 | Set-Variable serviceEndpointId
 
@@ -117,9 +128,9 @@ $serviceEndpointRequest.authorization.parameters.servicePrincipalId = $identity.
 $serviceEndpointRequest.authorization.parameters.tenantId = $identity.tenantId
 $serviceEndpointRequest.data.subscriptionId = $SubscriptionId
 $serviceEndpointRequest.data.subscriptionName = $subscription.name
-$serviceEndpointRequest.name = $subscription.name
+$serviceEndpointRequest.name = $ServiceConnectionName
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].description = "Created with $($MyInvocation.MyCommand.Name)"
-$serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $subscription.name
+$serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $ServiceConnectionName
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id = $projectId
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
 $serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable body
