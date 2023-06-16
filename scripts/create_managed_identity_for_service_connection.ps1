@@ -38,6 +38,7 @@ param (
 ) 
 Write-Verbose $MyInvocation.line 
 . (Join-Path $PSScriptRoot functions.ps1)
+$apiVersion = "7.1-preview.4"
 
 $OrganizationUrl = $OrganizationUrl.ToString().Trim('/') # Strip trailing '/'
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
@@ -130,7 +131,7 @@ if (!$serviceEndpointId) {
     $apiUri += "/${serviceEndpointId}"
     Write-Verbose "Updating service connection '$($serviceEndpointRequest.name)' (${serviceEndpointId})..."
 }
-$apiUri += "?api-version=7.1-preview.4"
+$apiUri += "?api-version=${apiVersion}"
 
 $headers = @{
     "Content-Type"  = "application/json"
