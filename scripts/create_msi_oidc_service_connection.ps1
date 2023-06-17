@@ -7,7 +7,7 @@
     Creates a Managed Identiy, sets up a federation subject on the Managed Identity for a Service Connection, creates the Service Connection, and grants the Managed Identity the Contributor role on the subscription.
 
 .EXAMPLE
-    ./create_msi_oidc_service_connection.ps1 -IdentityName my-identity -ResourceGroupName ericvan-common -Project PipelineSamples
+    ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg
 #> 
 #Requires -Version 7
 
@@ -16,14 +16,17 @@ param (
     [string]
     $IdentityName,
 
-    [parameter(Mandatory=$true,HelpMessage="Name of the Azure Resource Group")]
+    [parameter(Mandatory=$false,HelpMessage="Name of the Azure Resource Group")]
     [string]
-    [ValidateNotNullOrEmpty()]
     $ResourceGroupName,
     
     [parameter(Mandatory=$false,HelpMessage="Id of the Azure Subscription")]
     [guid]
     $SubscriptionId,
+
+    [parameter(Mandatory=$false,HelpMessage="Location of the Managed Identity")]
+    [string]
+    $Location,
 
     [parameter(Mandatory=$false,HelpMessage="Name of the Service Connection")]
     [string]
@@ -37,32 +40,49 @@ param (
     [parameter(Mandatory=$false,HelpMessage="Url of the Azure DevOps Organization")]
     [uri]
     [ValidateNotNullOrEmpty()]
-    $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL || $env:SYSTEM_COLLECTIONURI)
+    $OrganizationUrl=$env:AZDO_ORG_SERVICE_URL
 ) 
 Write-Verbose $MyInvocation.line 
 . (Join-Path $PSScriptRoot functions.ps1)
 $apiVersion = "7.1-preview.4"
-
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     Write-Error "Azure CLI is not installed. Please install it from https://docs.microsoft.com/cli/azure/install-azure-cli"
     exit 1
 }
 
-az account show 2>$null | ConvertFrom-Json | Set-Variable subscription
+# Log in to Azure
+az account show -o json 2>$null | ConvertFrom-Json | Set-Variable subscription
 if (!$subscription) {
     az login -o json | ConvertFrom-Json | Set-Variable subscription
 }
 $subscription | Format-List | Out-String | Write-Debug
 if ($SubscriptionId) {
-    az account set --subscription $SubscriptionId
-    az account show 2>$null | ConvertFrom-Json | Set-Variable subscription
+    az account set --subscription $SubscriptionId -o none
+    az account show -o json 2>$null | ConvertFrom-Json | Set-Variable subscription
 } else {
     $SubscriptionId = $subscription.id
 }
 
-$OrganizationUrl = $OrganizationUrl.ToString().Trim('/') # Strip trailing '/'
+# Process parameters, making sure they're not empty
+$OrganizationUrl = $OrganizationUrl.ToString().Trim('/')
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
+if (!$ResourceGroupName) {
+    az config get defaults.group --query value -o tsv | Set-Variable ResourceGroupName
+    $ResourceGroupName ??= "VS-${organizationName}-Group" # Billing group convention
+}
+az group show -g $ResourceGroupName -o json 2>$null | ConvertFrom-Json | Set-Variable resourceGroup
+if ($resourceGroup) {
+    if (!$Location) {
+        $Location = $resourceGroup.location
+    }
+} else {
+    if (!$Location) {
+        az config get defaults.location --query value -o tsv | Set-Variable Location
+        $Location ??= "southcentralus" # Azure location doesn't really matter for MI; the object is in AAD 
+    }
+    az group create -g $ResourceGroupName -l $Location -o json | ConvertFrom-Json | Set-Variable resourceGroup
+}
 if (!$ServiceConnectionName) {
     $ServiceConnectionName = $subscription.name
 }
@@ -72,16 +92,11 @@ if (!$IdentityName) {
 
 az identity create -n $IdentityName `
                    -g $ResourceGroupName `
+                   -l $Location `
                    --subscription $SubscriptionId `
                    -o json `
                    | ConvertFrom-Json `
                    | Set-Variable identity
-
-az role assignment create --assignee $identity.clientId `
-                          --role Contributor `
-                          --scope "/subscriptions/${SubscriptionId}" `
-                          --subscription $SubscriptionId `
-                          -o none
 
 $federatedSubject = "sc://${organizationName}/${Project}/${ServiceConnectionName}"
 az identity federated-credential create --name $IdentityName `
@@ -96,16 +111,26 @@ $identity | Add-Member -NotePropertyName subscriptionId   -NotePropertyValue $Su
 $identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
 $identity | Format-List | Out-String | Write-Debug
 
+az role assignment create --assignee-object-id $identity.principalId `
+                          --assignee-principal-type ServicePrincipal `
+                          --role Contributor `
+                          --scope "/subscriptions/${SubscriptionId}" `
+                          --subscription $SubscriptionId `
+                          -o none
+
 # Log in to Azure DevOps
 az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                             --query "accessToken" `
                             --output tsv `
-                            | Tee-Object -Variable token `
+                            | Tee-Object -Variable accessToken `
                             | az devops login --organization $OrganizationUrl
-az devops configure --defaults organization=$OrganizationUrl
-az devops project show --project PipelineSamples --query id -o tsv | Set-Variable projectId
+az devops project show --project $Project --query id -o tsv | Set-Variable projectId
+if (!$projectId) {
+    Write-Error "Project '${Project}' not found in organization '${OrganizationUrl}"
+    exit 1
+}
 
-az devops service-endpoint list -p PipelineSamples `
+az devops service-endpoint list -p $Project `
                                 --query "[?name=='${ServiceConnectionName}'].id" `
                                 -o tsv `
                                 | Set-Variable serviceEndpointId
@@ -146,7 +171,7 @@ $apiUri += "?api-version=${apiVersion}"
 
 $headers = @{
     "Content-Type"  = "application/json"
-    "Authorization" = "Bearer $token"
+    "Authorization" = "Bearer $accessToken"
 }
 Invoke-RestMethod -Uri $apiUri `
                   -Method ($serviceEndpointId ? 'PUT' : 'POST') `
