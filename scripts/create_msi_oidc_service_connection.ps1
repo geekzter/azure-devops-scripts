@@ -12,7 +12,7 @@
 .EXAMPLE
     ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg -SubscriptionId 00000000-0000-0000-0000-000000000000
 #> 
-#Requires -Version 7
+#Requires -Version 7.2
 
 param ( 
     [parameter(Mandatory=$false,HelpMessage="Name of the Managed Identity")]
@@ -23,17 +23,26 @@ param (
     [string]
     $IdentityResourceGroupName,
     
-    [parameter(Mandatory=$false,HelpMessage="Id of the Azure Subscription")]
+    [parameter(Mandatory=$false,HelpMessage="Id of the Azure Subscription where the Managed Identity will be created")]
     [guid]
-    $SubscriptionId=($env:AZURE_SUBSCRIPTION_ID || $env:ARM_SUBSCRIPTION_ID),
+    $IdentitySubscriptionId=($env:AZURE_SUBSCRIPTION_ID || $env:ARM_SUBSCRIPTION_ID),
 
     [parameter(Mandatory=$false,HelpMessage="Location of the Managed Identity")]
     [string]
-    $Location,
+    $IdentityLocation,
 
     [parameter(Mandatory=$false,HelpMessage="Name of the Service Connection")]
     [string]
     $ServiceConnectionName,
+
+    [parameter(Mandatory=$false,HelpMessage="Role to grant the Service Connection on the selected scope")]
+    [string]
+    [ValidateNotNullOrEmpty()]
+    $ServiceConnectionRole="Contributor",
+
+    [parameter(Mandatory=$false,HelpMessage="Scope of the Service Connection (e.g. /subscriptions/00000000-0000-0000-0000-000000000000)")]
+    [string]
+    $ServiceConnectionScope,
 
     [parameter(Mandatory=$true,HelpMessage="Name of the Azure DevOps Project")]
     [string]
@@ -61,8 +70,8 @@ if (!$subscription) {
     az login -o json | ConvertFrom-Json | Set-Variable subscription
 }
 $subscription | Format-List | Out-String | Write-Debug
-if ($SubscriptionId) {
-    az account set --subscription $SubscriptionId -o none
+if ($IdentitySubscriptionId) {
+    az account set --subscription $IdentitySubscriptionId -o none
     az account show -o json 2>$null | ConvertFrom-Json | Set-Variable subscription
 } else {
     # Prompt for subscription
@@ -87,10 +96,10 @@ if ($SubscriptionId) {
     }
 
     $subscription = $subscriptions[$occurrence-1]
-    $SubscriptionId = $subscription.id
+    $IdentitySubscriptionId = $subscription.id
 
     Write-Host "Using subscription '$($subscription.name)'" -ForegroundColor Yellow
-    Start-Sleep -Seconds 1
+    Start-Sleep -Milliseconds 250
 }
 
 # Log in to Azure & Azure DevOps
@@ -112,19 +121,25 @@ if (!$IdentityResourceGroupName) {
 }
 az group show -g $IdentityResourceGroupName -o json 2>$null | ConvertFrom-Json | Set-Variable resourceGroup
 if ($resourceGroup) {
-    if (!$Location) {
-        $Location = $resourceGroup.location
+    if (!$IdentityLocation) {
+        $IdentityLocation = $resourceGroup.location
     }
 } else {
-    if (!$Location) {
-        $Location = (az config get defaults.location --query value -o tsv)
+    if (!$IdentityLocation) {
+        $IdentityLocation = (az config get defaults.location --query value -o tsv)
     }
-    if (!$Location) {
+    if (!$IdentityLocation) {
         # Azure location doesn't really matter for MI; the object is in AAD which is a global service
-        $Location = "southcentralus"
+        $IdentityLocation = "southcentralus"
     }
-    az group create -g $IdentityResourceGroupName -l $Location -o json | ConvertFrom-Json | Set-Variable resourceGroup
+    az group create -g $IdentityResourceGroupName -l $IdentityLocation -o json | ConvertFrom-Json | Set-Variable resourceGroup
 }
+if (!$ServiceConnectionScope) {
+    $ServiceConnectionScope = "/subscriptions/${IdentitySubscriptionId}"
+    Write-Host "Parameter $($PSStyle.Formatting.Warning)ServiceConnectionScope$($PSStyle.Reset) not provided, using '${ServiceConnectionScope}'. This is the same location the Managed Identity will be created in."
+    Start-Sleep -Milliseconds 250
+}
+$serviceConnectionSubscriptionId = $ServiceConnectionScope.Split('/')[2]
 
 #-----------------------------------------------------------
 # Check whether project exists
@@ -136,7 +151,7 @@ if (!$projectId) {
 
 # Test whether Service Connection already exists
 if (!$ServiceConnectionName) {
-    $ServiceConnectionName = $subscription.name
+    $ServiceConnectionName = $(az account show --subscription $serviceConnectionSubscriptionId --query name -o tsv)
 }
 do {
     az devops service-endpoint list -p $Project `
@@ -146,7 +161,7 @@ do {
 
     $ServiceConnectionNameBefore = $ServiceConnectionName
     if ($serviceEndpointId) {
-        Write-Warning "Service connection '${ServiceConnectionName}' already exists. Provide a different name to create a new service connection."
+        Write-Warning "Service connection '${ServiceConnectionName}' already exists. Provide a different name to create a new service connection or press enter to overwrite '${ServiceConnectionName}'."
         $ServiceConnectionName = Read-Host -Prompt "Provide the name of the service connection ('${ServiceConnectionName}')"
         if (!$ServiceConnectionName) {
             $ServiceConnectionName = $ServiceConnectionNameBefore
@@ -166,11 +181,11 @@ if (!$IdentityName) {
     $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
 }
 Write-Verbose "Creating Managed Identity '${IdentityName}' in resource group '${IdentityResourceGroupName}'..."
-Write-Debug "az identity create -n $IdentityName -g $IdentityResourceGroupName -l $Location --subscription $SubscriptionId"
+Write-Debug "az identity create -n $IdentityName -g $IdentityResourceGroupName -l $IdentityLocation --subscription $IdentitySubscriptionId"
 az identity create -n $IdentityName `
                    -g $IdentityResourceGroupName `
-                   -l $Location `
-                   --subscription $SubscriptionId `
+                   -l $IdentityLocation `
+                   --subscription $IdentitySubscriptionId `
                    -o json `
                    | ConvertFrom-Json `
                    | Set-Variable identity
@@ -183,33 +198,36 @@ az identity federated-credential create --name $IdentityName `
                                         --resource-group $IdentityResourceGroupName `
                                         --issuer https://app.vstoken.visualstudio.com `
                                         --subject $federatedSubject `
-                                        --subscription $SubscriptionId `
+                                        --subscription $IdentitySubscriptionId `
                                         -o json `
                                         | ConvertFrom-Json `
                                         | Set-Variable federatedCredential
 Write-Verbose "Created federated credential $($federatedCredential.id)"
 $identity | Add-Member -NotePropertyName federatedSubject -NotePropertyValue $federatedSubject
-$identity | Add-Member -NotePropertyName subscriptionId   -NotePropertyValue $SubscriptionId
+$identity | Add-Member -NotePropertyName role -NotePropertyValue $ServiceConnectionRole
+$identity | Add-Member -NotePropertyName scope -NotePropertyValue $ServiceConnectionScope
+$identity | Add-Member -NotePropertyName subscriptionId -NotePropertyValue $IdentitySubscriptionId
 $identity | Format-List | Out-String | Write-Debug
-Write-Host "Managed Identity '$($identity.name)':"
-$identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
 
 Write-Verbose "Creating role assignment for Managed Identity '${IdentityName}' on subscription '$($subscription.name)'..."
 az role assignment create --assignee-object-id $identity.principalId `
                           --assignee-principal-type ServicePrincipal `
-                          --role Contributor `
-                          --scope "/subscriptions/${SubscriptionId}" `
-                          --subscription $SubscriptionId `
+                          --role $ServiceConnectionRole `
+                          --scope $ServiceConnectionScope `
+                          --subscription $serviceConnectionSubscriptionId `
                           -o json `
                           | ConvertFrom-Json `
                           | Set-Variable roleAssignment
 Write-Verbose "Created role assignment $($roleAssignment.id)"
 
+Write-Host "`nManaged Identity '$($identity.name)':"
+$identity | Format-List -Property id, clientId, federatedSubject, role, scope, subscriptionId, tenantId
+
 #-----------------------------------------------------------
 # TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
-#                                           --azure-rm-subscription-id $SubscriptionId `
-#                                           --azure-rm-subscription-name $SubscriptionId `
+#                                           --azure-rm-subscription-id $IdentitySubscriptionId `
+#                                           --azure-rm-subscription-name $IdentitySubscriptionId `
 #                                           --azure-rm-tenant-id $identity.tenantId `
 #                                           --name $IdentityName `
 #                                           --organization $OrganizationUrl `
@@ -223,7 +241,7 @@ Get-Content -Path (Join-Path $PSScriptRoot serviceEndpointRequest.json) `
 
 $serviceEndpointRequest.authorization.parameters.servicePrincipalId = $identity.clientId
 $serviceEndpointRequest.authorization.parameters.tenantId = $identity.tenantId
-$serviceEndpointRequest.data.subscriptionId = $SubscriptionId
+$serviceEndpointRequest.data.subscriptionId = $IdentitySubscriptionId
 $serviceEndpointRequest.data.subscriptionName = $subscription.name
 $serviceEndpointRequest.description = "Created with $($MyInvocation.MyCommand.Name)"
 $serviceEndpointRequest.name = $ServiceConnectionName
@@ -249,7 +267,7 @@ Invoke-RestMethod -Uri $apiUri `
                   | Set-Variable serviceEndpoint
 
 $serviceEndpoint | ConvertTo-Json -Depth 4 | Write-Debug
-if (!$serviceEndpoint)) {
+if (!$serviceEndpoint) {
     Write-Error "Failed to create / update service connection '${ServiceConnectionName}'"
     exit 1
 }
