@@ -51,6 +51,7 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+#-----------------------------------------------------------
 # Log in to Azure
 az account show -o json 2>$null | ConvertFrom-Json | Set-Variable subscription
 if (!$subscription) {
@@ -64,8 +65,16 @@ if ($SubscriptionId) {
     $SubscriptionId = $subscription.id
 }
 
-# Process parameters, making sure they're not empty
+# Log in to Azure & Azure DevOps
 $OrganizationUrl = $OrganizationUrl.ToString().Trim('/')
+az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
+                            --query "accessToken" `
+                            --output tsv `
+                            | Tee-Object -Variable accessToken `
+                            | az devops login --organization $OrganizationUrl
+
+#-----------------------------------------------------------
+# Process parameters, making sure they're not empty
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
 if (!$ResourceGroupName) {
     $ResourceGroupName = (az config get defaults.group --query value -o tsv)
@@ -95,6 +104,40 @@ if (!$IdentityName) {
     $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
 }
 
+#-----------------------------------------------------------
+# Validate parameter values
+# Check whether project exists
+az devops project show --project $Project --query id -o tsv | Set-Variable projectId
+if (!$projectId) {
+    Write-Error "Project '${Project}' not found in organization '${OrganizationUrl}"
+    exit 1
+}
+
+# Test whether Service Connection already exists
+do {
+    az devops service-endpoint list -p $Project `
+                                    --query "[?name=='${ServiceConnectionName}'].id" `
+                                    -o tsv `
+                                    | Set-Variable serviceEndpointId
+
+    $ServiceConnectionNameBefore = $ServiceConnectionName
+    if ($serviceEndpointId) {
+        Write-Warning "Service connection '${ServiceConnectionName}' already exists. Provide a different name to create a new service connection."
+        $ServiceConnectionName = Read-Host -Prompt "Provide the name of the service connection ('${ServiceConnectionName}')"
+        if (!$ServiceConnectionName) {
+            $ServiceConnectionName = $ServiceConnectionNameBefore
+        }
+        if ($ServiceConnectionName -ieq $ServiceConnectionNameBefore) {
+            Write-Host "Updating service connection '${ServiceConnectionName}' (${serviceEndpointId})..."
+            break
+        }
+    } else {
+        Write-Host "Creating service connection '${ServiceConnectionName}'..."
+    }
+} while ($serviceEndpointId)
+
+#-----------------------------------------------------------
+# Create Managed Identity
 Write-Debug "az identity create -n $IdentityName -g $ResourceGroupName -l $Location --subscription $SubscriptionId"
 az identity create -n $IdentityName `
                    -g $ResourceGroupName `
@@ -123,45 +166,7 @@ az role assignment create --assignee-object-id $identity.principalId `
                           --scope "/subscriptions/${SubscriptionId}" `
                           --subscription $SubscriptionId `
                           -o none
-
-# Log in to Azure DevOps
-az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
-                            --query "accessToken" `
-                            --output tsv `
-                            | Tee-Object -Variable accessToken `
-                            | az devops login --organization $OrganizationUrl
-az devops project show --project $Project --query id -o tsv | Set-Variable projectId
-if (!$projectId) {
-    Write-Error "Project '${Project}' not found in organization '${OrganizationUrl}"
-    exit 1
-}
-
-# Test whether Service Connection already exists
-$apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
-do {
-    az devops service-endpoint list -p $Project `
-                                    --query "[?name=='${ServiceConnectionName}'].id" `
-                                    -o tsv `
-                                    | Set-Variable serviceEndpointId
-
-    $ServiceConnectionNameBefore = $ServiceConnectionName
-    if ($serviceEndpointId) {
-        Write-Warning "Service connection '${ServiceConnectionName}' already exists. Provide a different name to create a new service connection."
-        $ServiceConnectionName = Read-Host -Prompt "Provide the name of the service connection ('${ServiceConnectionName}')"
-        if (!$ServiceConnectionName) {
-            $ServiceConnectionName = $ServiceConnectionNameBefore
-        }
-        if ($ServiceConnectionName -ieq $ServiceConnectionNameBefore) {
-            Write-Host "Updating service connection '${ServiceConnectionName}' (${serviceEndpointId})..."
-            $apiUri += "/${serviceEndpointId}"
-            break
-        }
-    } else {
-        Write-Host "Creating service connection '${ServiceConnectionName}'..."
-    }
-} while ($serviceEndpointId)
-$apiUri += "?api-version=${apiVersion}"
-
+#-----------------------------------------------------------
 # TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
 #                                           --azure-rm-subscription-id $SubscriptionId `
@@ -188,6 +193,11 @@ $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.nam
 $serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable body
 
 
+$apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
+if ($serviceEndpointId) {
+    $apiUri += "/${serviceEndpointId}"
+}
+$apiUri += "?api-version=${apiVersion}"
 $headers = @{
     "Content-Type"  = "application/json"
     "Authorization" = "Bearer $accessToken"
