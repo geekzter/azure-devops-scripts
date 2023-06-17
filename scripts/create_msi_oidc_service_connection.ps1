@@ -7,7 +7,7 @@
     Creates a Managed Identiy, sets up a federation subject on the Managed Identity for a Service Connection, creates the Service Connection, and grants the Managed Identity the Contributor role on the subscription.
 
 .LINK
-https://aka.ms/azdo-rm-workload-identity
+    https://aka.ms/azdo-rm-workload-identity
 
 .EXAMPLE
     ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg -SubscriptionId 00000000-0000-0000-0000-000000000000
@@ -152,11 +152,11 @@ do {
             $ServiceConnectionName = $ServiceConnectionNameBefore
         }
         if ($ServiceConnectionName -ieq $ServiceConnectionNameBefore) {
-            Write-Host "Updating service connection '${ServiceConnectionName}' (${serviceEndpointId})..."
+            Write-Verbose "Service connection '${ServiceConnectionName}' (${serviceEndpointId}) wil be updated"
             break
         }
     } else {
-        Write-Host "Creating service connection '${ServiceConnectionName}'..."
+        Write-Verbose "Service connection '${ServiceConnectionName}' (${serviceEndpointId}) wil be created"
     }
 } while ($serviceEndpointId)
 
@@ -165,6 +165,7 @@ do {
 if (!$IdentityName) {
     $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
 }
+Write-Verbose "Creating Managed Identity '${IdentityName}' in resource group '${ResourceGroupName}'..."
 Write-Debug "az identity create -n $IdentityName -g $ResourceGroupName -l $Location --subscription $SubscriptionId"
 az identity create -n $IdentityName `
                    -g $ResourceGroupName `
@@ -173,26 +174,36 @@ az identity create -n $IdentityName `
                    -o json `
                    | ConvertFrom-Json `
                    | Set-Variable identity
+Write-Verbose "Created Managed Identity $($identity.id)"
 
 $federatedSubject = "sc://${organizationName}/${Project}/${ServiceConnectionName}"
+Write-Verbose "Configuring Managed Identity '${IdentityName}' with federated subject '${federatedSubject}'..."
 az identity federated-credential create --name $IdentityName `
                                         --identity-name $IdentityName  `
                                         --resource-group $ResourceGroupName `
                                         --issuer https://app.vstoken.visualstudio.com `
                                         --subject $federatedSubject `
                                         --subscription $SubscriptionId `
-                                        -o none
+                                        -o json `
+                                        | ConvertFrom-Json `
+                                        | Set-Variable federatedCredential
+Write-Verbose "Created federated credential $($federatedCredential.id)"
 $identity | Add-Member -NotePropertyName federatedSubject -NotePropertyValue $federatedSubject
 $identity | Add-Member -NotePropertyName subscriptionId   -NotePropertyValue $SubscriptionId
 $identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
 $identity | Format-List | Out-String | Write-Debug
 
+Write-Verbose "Creating role assignment for Managed Identity '${IdentityName}' on subscription '$($subscription.name)'..."
 az role assignment create --assignee-object-id $identity.principalId `
                           --assignee-principal-type ServicePrincipal `
                           --role Contributor `
                           --scope "/subscriptions/${SubscriptionId}" `
                           --subscription $SubscriptionId `
-                          -o none
+                          -o json `
+                          | ConvertFrom-Json `
+                          | Set-Variable roleAssignment
+Write-Verbose "Created role assignment $($roleAssignment.id)"
+
 #-----------------------------------------------------------
 # TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
@@ -204,6 +215,7 @@ az role assignment create --assignee-object-id $identity.principalId `
 #                                           --project $Project `
                                         
 # Prepare service connection REST API request body
+Write-Verbose "Creating / updating service connection '${ServiceConnectionName}'..."
 Get-Content -Path (Join-Path $PSScriptRoot serviceEndpointRequest.json) `
             | ConvertFrom-Json `
             | Set-Variable serviceEndpointRequest
@@ -217,22 +229,28 @@ $serviceEndpointRequest.serviceEndpointProjectReferences[0].description = "Creat
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $ServiceConnectionName
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id = $projectId
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
-$serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable body
-
+$serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable serviceEndpointRequestBody
 
 $apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
 if ($serviceEndpointId) {
     $apiUri += "/${serviceEndpointId}"
 }
 $apiUri += "?api-version=${apiVersion}"
-$headers = @{
+$serviceEndpointRequestHeaders = @{
     "Content-Type"  = "application/json"
     "Authorization" = "Bearer $accessToken"
 }
 Invoke-RestMethod -Uri $apiUri `
                   -Method ($serviceEndpointId ? 'PUT' : 'POST') `
-                  -Headers $headers `
-                  -Body $body `
-                  | Set-Variable response
+                  -Headers $serviceEndpointRequestHeaders `
+                  -Body $serviceEndpointRequestBody `
+                  | Set-Variable serviceEndpoint
 
-$response | ConvertTo-Json
+$serviceEndpoint | ConvertTo-Json -Depth 4| Write-Debug
+if ($serviceEndpoint) {
+    if ($serviceEndpointId) {
+        Write-Host "Service connection '${ServiceConnectionName}' ($($serviceEndpoint.id)) updated."
+    } else {
+        Write-Host "Service connection '${ServiceConnectionName}' ($($serviceEndpoint.id)) created."
+    }
+}
