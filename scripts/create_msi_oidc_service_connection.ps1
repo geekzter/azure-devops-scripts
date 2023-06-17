@@ -19,9 +19,9 @@ param (
     [string]
     $IdentityName,
 
-    [parameter(Mandatory=$false,HelpMessage="Name of the Azure Resource Group")]
+    [parameter(Mandatory=$false,HelpMessage="Name of the Azure Resource Group where the Managed Identity will be created")]
     [string]
-    $ResourceGroupName,
+    $IdentityResourceGroupName,
     
     [parameter(Mandatory=$false,HelpMessage="Id of the Azure Subscription")]
     [guid]
@@ -104,13 +104,13 @@ az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
 #-----------------------------------------------------------
 # Process parameters, making sure they're not empty
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
-if (!$ResourceGroupName) {
-    $ResourceGroupName = (az config get defaults.group --query value -o tsv)
+if (!$IdentityResourceGroupName) {
+    $IdentityResourceGroupName = (az config get defaults.group --query value -o tsv)
 }
-if (!$ResourceGroupName) {
-    $ResourceGroupName = "VS-${organizationName}-Group"
+if (!$IdentityResourceGroupName) {
+    $IdentityResourceGroupName = "VS-${organizationName}-Group"
 }
-az group show -g $ResourceGroupName -o json 2>$null | ConvertFrom-Json | Set-Variable resourceGroup
+az group show -g $IdentityResourceGroupName -o json 2>$null | ConvertFrom-Json | Set-Variable resourceGroup
 if ($resourceGroup) {
     if (!$Location) {
         $Location = $resourceGroup.location
@@ -123,7 +123,7 @@ if ($resourceGroup) {
         # Azure location doesn't really matter for MI; the object is in AAD which is a global service
         $Location = "southcentralus"
     }
-    az group create -g $ResourceGroupName -l $Location -o json | ConvertFrom-Json | Set-Variable resourceGroup
+    az group create -g $IdentityResourceGroupName -l $Location -o json | ConvertFrom-Json | Set-Variable resourceGroup
 }
 
 #-----------------------------------------------------------
@@ -165,10 +165,10 @@ do {
 if (!$IdentityName) {
     $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
 }
-Write-Verbose "Creating Managed Identity '${IdentityName}' in resource group '${ResourceGroupName}'..."
-Write-Debug "az identity create -n $IdentityName -g $ResourceGroupName -l $Location --subscription $SubscriptionId"
+Write-Verbose "Creating Managed Identity '${IdentityName}' in resource group '${IdentityResourceGroupName}'..."
+Write-Debug "az identity create -n $IdentityName -g $IdentityResourceGroupName -l $Location --subscription $SubscriptionId"
 az identity create -n $IdentityName `
-                   -g $ResourceGroupName `
+                   -g $IdentityResourceGroupName `
                    -l $Location `
                    --subscription $SubscriptionId `
                    -o json `
@@ -180,7 +180,7 @@ $federatedSubject = "sc://${organizationName}/${Project}/${ServiceConnectionName
 Write-Verbose "Configuring Managed Identity '${IdentityName}' with federated subject '${federatedSubject}'..."
 az identity federated-credential create --name $IdentityName `
                                         --identity-name $IdentityName  `
-                                        --resource-group $ResourceGroupName `
+                                        --resource-group $IdentityResourceGroupName `
                                         --issuer https://app.vstoken.visualstudio.com `
                                         --subject $federatedSubject `
                                         --subscription $SubscriptionId `
@@ -249,25 +249,28 @@ Invoke-RestMethod -Uri $apiUri `
                   | Set-Variable serviceEndpoint
 
 $serviceEndpoint | ConvertTo-Json -Depth 4 | Write-Debug
-if ($serviceEndpoint) {
-    if ($serviceEndpointId) {
-        Write-Host "Service connection '${ServiceConnectionName}' updated:"
-    } else {
-        Write-Host "Service connection '${ServiceConnectionName}' created:"
-    }
-    $serviceEndpoint | Select-Object -Property authorization, data, id, name, description, type, createdBy `
-                     | ForEach-Object { 
-                        $_.createdBy = $_.createdBy.uniqueName
-                        $_ | Add-Member -NotePropertyName clientId -NotePropertyValue $_.authorization.parameters.serviceprincipalid
-                        $_ | Add-Member -NotePropertyName creationMode -NotePropertyValue $_.data.creationMode
-                        $_ | Add-Member -NotePropertyName scheme -NotePropertyValue $_.authorization.scheme
-                        $_ | Add-Member -NotePropertyName scopeLevel -NotePropertyValue $_.data.scopeLevel
-                        $_ | Add-Member -NotePropertyName subscriptionName -NotePropertyValue $_.data.subscriptionName
-                        $_ | Add-Member -NotePropertyName subscriptionId -NotePropertyValue $_.data.subscriptionId
-                        $_ | Add-Member -NotePropertyName tenantid -NotePropertyValue $_.authorization.parameters.tenantid
-                        $_ | Add-Member -NotePropertyName workloadIdentityFederationSubject -NotePropertyValue $_.authorization.parameters.workloadIdentityFederationSubject
-                        $_
-                       } `
-                     | Select-Object -ExcludeProperty authorization, data
-                     | Format-List #-Property id, name, description, type, createdBy
+if (!$serviceEndpoint)) {
+    Write-Error "Failed to create / update service connection '${ServiceConnectionName}'"
+    exit 1
 }
+
+if ($serviceEndpointId) {
+    Write-Host "Service connection '${ServiceConnectionName}' updated:"
+} else {
+    Write-Host "Service connection '${ServiceConnectionName}' created:"
+}
+$serviceEndpoint | Select-Object -Property authorization, data, id, name, description, type, createdBy `
+                 | ForEach-Object { 
+                 $_.createdBy = $_.createdBy.uniqueName
+                 $_ | Add-Member -NotePropertyName clientId -NotePropertyValue $_.authorization.parameters.serviceprincipalid
+                 $_ | Add-Member -NotePropertyName creationMode -NotePropertyValue $_.data.creationMode
+                 $_ | Add-Member -NotePropertyName scheme -NotePropertyValue $_.authorization.scheme
+                 $_ | Add-Member -NotePropertyName scopeLevel -NotePropertyValue $_.data.scopeLevel
+                 $_ | Add-Member -NotePropertyName subscriptionName -NotePropertyValue $_.data.subscriptionName
+                 $_ | Add-Member -NotePropertyName subscriptionId -NotePropertyValue $_.data.subscriptionId
+                 $_ | Add-Member -NotePropertyName tenantid -NotePropertyValue $_.authorization.parameters.tenantid
+                 $_ | Add-Member -NotePropertyName workloadIdentityFederationSubject -NotePropertyValue $_.authorization.parameters.workloadIdentityFederationSubject
+                 $_
+                 } `
+                 | Select-Object -ExcludeProperty authorization, data
+                 | Format-List
