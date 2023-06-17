@@ -6,6 +6,9 @@
 .DESCRIPTION 
     Creates a Managed Identiy, sets up a federation subject on the Managed Identity for a Service Connection, creates the Service Connection, and grants the Managed Identity the Contributor role on the subscription.
 
+.LINK
+https://aka.ms/azdo-rm-workload-identity
+
 .EXAMPLE
     ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg -SubscriptionId 00000000-0000-0000-0000-000000000000
 #> 
@@ -97,15 +100,8 @@ if ($resourceGroup) {
     }
     az group create -g $ResourceGroupName -l $Location -o json | ConvertFrom-Json | Set-Variable resourceGroup
 }
-if (!$ServiceConnectionName) {
-    $ServiceConnectionName = $subscription.name
-}
-if (!$IdentityName) {
-    $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
-}
 
 #-----------------------------------------------------------
-# Validate parameter values
 # Check whether project exists
 az devops project show --project $Project --query id -o tsv | Set-Variable projectId
 if (!$projectId) {
@@ -114,6 +110,9 @@ if (!$projectId) {
 }
 
 # Test whether Service Connection already exists
+if (!$ServiceConnectionName) {
+    $ServiceConnectionName = $subscription.name
+}
 do {
     az devops service-endpoint list -p $Project `
                                     --query "[?name=='${ServiceConnectionName}'].id" `
@@ -138,6 +137,9 @@ do {
 
 #-----------------------------------------------------------
 # Create Managed Identity
+if (!$IdentityName) {
+    $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
+}
 Write-Debug "az identity create -n $IdentityName -g $ResourceGroupName -l $Location --subscription $SubscriptionId"
 az identity create -n $IdentityName `
                    -g $ResourceGroupName `
