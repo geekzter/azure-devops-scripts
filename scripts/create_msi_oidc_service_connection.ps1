@@ -190,8 +190,9 @@ az identity federated-credential create --name $IdentityName `
 Write-Verbose "Created federated credential $($federatedCredential.id)"
 $identity | Add-Member -NotePropertyName federatedSubject -NotePropertyValue $federatedSubject
 $identity | Add-Member -NotePropertyName subscriptionId   -NotePropertyValue $SubscriptionId
-$identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
 $identity | Format-List | Out-String | Write-Debug
+Write-Host "Managed Identity '$($identity.name)':"
+$identity | Format-List -Property id, subscriptionId, clientId, federatedSubject, tenantId
 
 Write-Verbose "Creating role assignment for Managed Identity '${IdentityName}' on subscription '$($subscription.name)'..."
 az role assignment create --assignee-object-id $identity.principalId `
@@ -224,6 +225,7 @@ $serviceEndpointRequest.authorization.parameters.servicePrincipalId = $identity.
 $serviceEndpointRequest.authorization.parameters.tenantId = $identity.tenantId
 $serviceEndpointRequest.data.subscriptionId = $SubscriptionId
 $serviceEndpointRequest.data.subscriptionName = $subscription.name
+$serviceEndpointRequest.description = "Created with $($MyInvocation.MyCommand.Name)"
 $serviceEndpointRequest.name = $ServiceConnectionName
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].description = "Created with $($MyInvocation.MyCommand.Name)"
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $ServiceConnectionName
@@ -249,8 +251,9 @@ Invoke-RestMethod -Uri $apiUri `
 $serviceEndpoint | ConvertTo-Json -Depth 4| Write-Debug
 if ($serviceEndpoint) {
     if ($serviceEndpointId) {
-        Write-Host "Service connection '${ServiceConnectionName}' ($($serviceEndpoint.id)) updated."
+        Write-Host "Service connection '${ServiceConnectionName}' updated:"
     } else {
-        Write-Host "Service connection '${ServiceConnectionName}' ($($serviceEndpoint.id)) created."
+        Write-Host "Service connection '${ServiceConnectionName}' created:"
     }
+    $serviceEndpoint | Format-List -Property id, name, description, type, createdBy
 }
