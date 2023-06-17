@@ -7,7 +7,7 @@
     Creates a Managed Identiy, sets up a federation subject on the Managed Identity for a Service Connection, creates the Service Connection, and grants the Managed Identity the Contributor role on the subscription.
 
 .EXAMPLE
-    ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg
+    ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg -SubscriptionId 00000000-0000-0000-0000-000000000000
 #> 
 #Requires -Version 7
 
@@ -22,7 +22,7 @@ param (
     
     [parameter(Mandatory=$false,HelpMessage="Id of the Azure Subscription")]
     [guid]
-    $SubscriptionId,
+    $SubscriptionId=($env:AZURE_SUBSCRIPTION_ID || $env:ARM_SUBSCRIPTION_ID),
 
     [parameter(Mandatory=$false,HelpMessage="Location of the Managed Identity")]
     [string]
@@ -35,12 +35,12 @@ param (
     [parameter(Mandatory=$true,HelpMessage="Name of the Azure DevOps Project")]
     [string]
     [ValidateNotNullOrEmpty()]
-    $Project,
+    $Project=$env:SYSTEM_TEAMPROJECT,
 
     [parameter(Mandatory=$false,HelpMessage="Url of the Azure DevOps Organization")]
     [uri]
     [ValidateNotNullOrEmpty()]
-    $OrganizationUrl=$env:AZDO_ORG_SERVICE_URL
+    $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL || env:SYSTEM_TASKDEFINITIONSURI)
 ) 
 Write-Verbose $MyInvocation.line 
 . (Join-Path $PSScriptRoot functions.ps1)
@@ -68,8 +68,10 @@ if ($SubscriptionId) {
 $OrganizationUrl = $OrganizationUrl.ToString().Trim('/')
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
 if (!$ResourceGroupName) {
-    az config get defaults.group --query value -o tsv | Set-Variable ResourceGroupName
-    $ResourceGroupName ??= "VS-${organizationName}-Group" # Billing group convention
+    $ResourceGroupName = (az config get defaults.group --query value -o tsv)
+}
+if (!$ResourceGroupName) {
+    $ResourceGroupName = "VS-${organizationName}-Group"
 }
 az group show -g $ResourceGroupName -o json 2>$null | ConvertFrom-Json | Set-Variable resourceGroup
 if ($resourceGroup) {
@@ -78,8 +80,11 @@ if ($resourceGroup) {
     }
 } else {
     if (!$Location) {
-        az config get defaults.location --query value -o tsv | Set-Variable Location
-        $Location ??= "southcentralus" # Azure location doesn't really matter for MI; the object is in AAD 
+        $Location = (az config get defaults.location --query value -o tsv)
+    }
+    if (!$Location) {
+        # Azure location doesn't really matter for MI; the object is in AAD which is a global service
+        $Location = "southcentralus"
     }
     az group create -g $ResourceGroupName -l $Location -o json | ConvertFrom-Json | Set-Variable resourceGroup
 }
@@ -90,6 +95,7 @@ if (!$IdentityName) {
     $IdentityName = "${organizationName}-${Project}-${ServiceConnectionName}"
 }
 
+Write-Debug "az identity create -n $IdentityName -g $ResourceGroupName -l $Location --subscription $SubscriptionId"
 az identity create -n $IdentityName `
                    -g $ResourceGroupName `
                    -l $Location `
@@ -130,10 +136,31 @@ if (!$projectId) {
     exit 1
 }
 
-az devops service-endpoint list -p $Project `
-                                --query "[?name=='${ServiceConnectionName}'].id" `
-                                -o tsv `
-                                | Set-Variable serviceEndpointId
+# Test whether Service Connection already exists
+$apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
+do {
+    az devops service-endpoint list -p $Project `
+                                    --query "[?name=='${ServiceConnectionName}'].id" `
+                                    -o tsv `
+                                    | Set-Variable serviceEndpointId
+
+    $ServiceConnectionNameBefore = $ServiceConnectionName
+    if ($serviceEndpointId) {
+        Write-Warning "Service connection '${ServiceConnectionName}' already exists. Provide a different name to create a new service connection."
+        $ServiceConnectionName = Read-Host -Prompt "Provide the name of the service connection ('${ServiceConnectionName}')"
+        if (!$ServiceConnectionName) {
+            $ServiceConnectionName = $ServiceConnectionNameBefore
+        }
+        if ($ServiceConnectionName -ieq $ServiceConnectionNameBefore) {
+            Write-Host "Updating service connection '${ServiceConnectionName}' (${serviceEndpointId})..."
+            $apiUri += "/${serviceEndpointId}"
+            break
+        }
+    } else {
+        Write-Host "Creating service connection '${ServiceConnectionName}'..."
+    }
+} while ($serviceEndpointId)
+$apiUri += "?api-version=${apiVersion}"
 
 # TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
@@ -160,14 +187,6 @@ $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id 
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
 $serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable body
 
-$apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
-if (!$serviceEndpointId) {
-    Write-Verbose "Creating service connection '$($serviceEndpointRequest.name)'..."
-} else {
-    $apiUri += "/${serviceEndpointId}"
-    Write-Verbose "Updating service connection '$($serviceEndpointRequest.name)' (${serviceEndpointId})..."
-}
-$apiUri += "?api-version=${apiVersion}"
 
 $headers = @{
     "Content-Type"  = "application/json"
