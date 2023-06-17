@@ -65,7 +65,32 @@ if ($SubscriptionId) {
     az account set --subscription $SubscriptionId -o none
     az account show -o json 2>$null | ConvertFrom-Json | Set-Variable subscription
 } else {
+    # Prompt for subscription
+    az account list --query "sort_by([].{id:id, name:name},&name)" `
+                    -o json `
+                    | ConvertFrom-Json `
+                    | Set-Variable subscriptions
+
+    if ($subscriptions.Length -eq 1) {
+        $occurrence = 0
+    } else {
+        # Active subscription may not be the desired one, prompt the user to select one
+        $index = 0
+        $subscriptions | Format-Table -Property @{name="index";expression={$script:index;$script:index+=1}}, id, name
+        Write-Host "Set `$env:ARM_SUBSCRIPTION_ID to the id of the subscription you want to use to prevent this prompt" -NoNewline
+
+        do {
+            Write-Host "`nEnter the index # of the subscription you want to use: " -ForegroundColor Cyan -NoNewline
+            [int]$occurrence = Read-Host
+            Write-Debug "User entered index '$occurrence'"
+        } while (($occurrence -notmatch "^\d+$") -or ($occurrence -lt 1) -or ($occurrence -gt $subscriptions.Length))
+    }
+
+    $subscription = $subscriptions[$occurrence-1]
     $SubscriptionId = $subscription.id
+
+    Write-Host "Using subscription '$($subscription.name)'" -ForegroundColor Yellow
+    Start-Sleep -Seconds 1
 }
 
 # Log in to Azure & Azure DevOps
