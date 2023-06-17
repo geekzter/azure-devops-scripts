@@ -248,12 +248,26 @@ Invoke-RestMethod -Uri $apiUri `
                   -Body $serviceEndpointRequestBody `
                   | Set-Variable serviceEndpoint
 
-$serviceEndpoint | ConvertTo-Json -Depth 4| Write-Debug
+$serviceEndpoint | ConvertTo-Json -Depth 4 | Write-Debug
 if ($serviceEndpoint) {
     if ($serviceEndpointId) {
         Write-Host "Service connection '${ServiceConnectionName}' updated:"
     } else {
         Write-Host "Service connection '${ServiceConnectionName}' created:"
     }
-    $serviceEndpoint | Format-List -Property id, name, description, type, createdBy
+    $serviceEndpoint | Select-Object -Property authorization, data, id, name, description, type, createdBy `
+                     | ForEach-Object { 
+                        $_.createdBy = $_.createdBy.uniqueName
+                        $_ | Add-Member -NotePropertyName clientId -NotePropertyValue $_.authorization.parameters.serviceprincipalid
+                        $_ | Add-Member -NotePropertyName creationMode -NotePropertyValue $_.data.creationMode
+                        $_ | Add-Member -NotePropertyName scheme -NotePropertyValue $_.authorization.scheme
+                        $_ | Add-Member -NotePropertyName scopeLevel -NotePropertyValue $_.data.scopeLevel
+                        $_ | Add-Member -NotePropertyName subscriptionName -NotePropertyValue $_.data.subscriptionName
+                        $_ | Add-Member -NotePropertyName subscriptionId -NotePropertyValue $_.data.subscriptionId
+                        $_ | Add-Member -NotePropertyName tenantid -NotePropertyValue $_.authorization.parameters.tenantid
+                        $_ | Add-Member -NotePropertyName workloadIdentityFederationSubject -NotePropertyValue $_.authorization.parameters.workloadIdentityFederationSubject
+                        $_
+                       } `
+                     | Select-Object -ExcludeProperty authorization, data
+                     | Format-List #-Property id, name, description, type, createdBy
 }

@@ -6,6 +6,7 @@
         "scopeLevel": "Subscription",
         "creationMode": "Manual"
     },
+    "description": "",
     "name": "",
     "type": "AzureRM",
     "url": "https://management.azure.com/",
