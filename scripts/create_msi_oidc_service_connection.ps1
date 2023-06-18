@@ -60,7 +60,7 @@ Write-Verbose $MyInvocation.line
 $apiVersion = "7.1-preview.4"
 
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
-    Write-Error "Azure CLI is not installed. Please install it from https://docs.microsoft.com/cli/azure/install-azure-cli"
+    Write-Error "Azure CLI is not installed. You can get it here: https://docs.microsoft.com/cli/azure/install-azure-cli"
     exit 1
 }
 
@@ -110,14 +110,19 @@ az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                             --output tsv `
                             | Set-Variable accessToken
 if (!$accessToken) {
-    Write-Error "Failed to get access token for $(subscription.user.name) and Azure DevOps"
+    Write-Error "$(subscription.user.name) failed to get access token for Azure DevOps"
     exit 1
+}
+if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
+    Write-Host "Adding Azure CLI extension 'azure-devops'..."
+    az extension add -n azure-devops -y -o none
 }
 $accessToken | az devops login --organization $OrganizationUrl
 if ($lastexitcode -ne 0) {
     Write-Error "$($subscription.user.name) failed to log in to Azure DevOps organization '${OrganizationUrl}'"
     exit
 }
+
 #-----------------------------------------------------------
 # Process parameters, making sure they're not empty
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
@@ -238,8 +243,8 @@ $identity | Format-List -Property id, clientId, federatedSubject, role, scope, s
 #-----------------------------------------------------------
 # TODO: Create the service connection (Azure CLI)
 # az devops service-endpoint azurerm create --azure-rm-service-principal-id $identity.clientId `
-#                                           --azure-rm-subscription-id $IdentitySubscriptionId `
-#                                           --azure-rm-subscription-name $IdentitySubscriptionId `
+#                                           --azure-rm-subscription-id $serviceConnectionSubscriptionId `
+#                                           --azure-rm-subscription-name $ServiceConnectionName `
 #                                           --azure-rm-tenant-id $identity.tenantId `
 #                                           --name $IdentityName `
 #                                           --organization $OrganizationUrl `
@@ -269,14 +274,12 @@ if ($serviceEndpointId) {
     $apiUri += "/${serviceEndpointId}"
 }
 $apiUri += "?api-version=${apiVersion}"
-$serviceEndpointRequestHeaders = @{
-    "Content-Type"  = "application/json"
-    "Authorization" = "Bearer $accessToken"
-}
 Invoke-RestMethod -Uri $apiUri `
                   -Method ($serviceEndpointId ? 'PUT' : 'POST') `
-                  -Headers $serviceEndpointRequestHeaders `
                   -Body $serviceEndpointRequestBody `
+                  -ContentType 'application/json' `
+                  -Authentication Bearer `
+                  -Token (ConvertTo-SecureString $accessToken -AsPlainText) `
                   | Set-Variable serviceEndpoint
 
 $serviceEndpoint | ConvertTo-Json -Depth 4 | Write-Debug
