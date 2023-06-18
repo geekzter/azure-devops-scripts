@@ -27,7 +27,7 @@ param (
     [guid]
     $IdentitySubscriptionId=($env:AZURE_SUBSCRIPTION_ID || $env:ARM_SUBSCRIPTION_ID),
 
-    [parameter(Mandatory=$false,HelpMessage="Location of the Managed Identity")]
+    [parameter(Mandatory=$false,HelpMessage="Azure region of the Managed Identity")]
     [string]
     $IdentityLocation,
 
@@ -42,6 +42,7 @@ param (
 
     [parameter(Mandatory=$false,HelpMessage="Scope of the Service Connection (e.g. /subscriptions/00000000-0000-0000-0000-000000000000)")]
     [string]
+    [ValidatePattern("^$|(?i)/subscriptions/[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}(/resourcegroups/(.+?))?")]
     $ServiceConnectionScope,
 
     [parameter(Mandatory=$true,HelpMessage="Name of the Azure DevOps Project")]
@@ -107,9 +108,16 @@ $OrganizationUrl = $OrganizationUrl.ToString().Trim('/')
 az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                             --query "accessToken" `
                             --output tsv `
-                            | Tee-Object -Variable accessToken `
-                            | az devops login --organization $OrganizationUrl
-
+                            | Set-Variable accessToken
+if (!$accessToken) {
+    Write-Error "Failed to get access token for $(subscription.user.name) and Azure DevOps"
+    exit 1
+}
+$accessToken | az devops login --organization $OrganizationUrl
+if ($lastexitcode -ne 0) {
+    Write-Error "$($subscription.user.name) failed to log in to Azure DevOps organization '${OrganizationUrl}'"
+    exit
+}
 #-----------------------------------------------------------
 # Process parameters, making sure they're not empty
 $organizationName = $OrganizationUrl.ToString().Split('/')[3]
@@ -136,8 +144,7 @@ if ($resourceGroup) {
 }
 if (!$ServiceConnectionScope) {
     $ServiceConnectionScope = "/subscriptions/${IdentitySubscriptionId}"
-    Write-Host "Parameter $($PSStyle.Formatting.Warning)ServiceConnectionScope$($PSStyle.Reset) not provided, using '${ServiceConnectionScope}'. This is the same location the Managed Identity will be created in."
-    Start-Sleep -Milliseconds 250
+    Write-Verbose "Parameter ServiceConnectionScope not provided, using '${ServiceConnectionScope}'."
 }
 $serviceConnectionSubscriptionId = $ServiceConnectionScope.Split('/')[2]
 
@@ -152,6 +159,11 @@ if (!$projectId) {
 # Test whether Service Connection already exists
 if (!$ServiceConnectionName) {
     $ServiceConnectionName = $(az account show --subscription $serviceConnectionSubscriptionId --query name -o tsv)
+    $serviceConnectionResourceGroupName = $ServiceConnectionScope.Split('/')[4]
+    if ($serviceConnectionResourceGroupName) {
+        $ServiceConnectionName += "-${serviceConnectionResourceGroupName}"
+    }
+    $ServiceConnectionName += "-oidc-msi"
 }
 do {
     az devops service-endpoint list -p $Project `
@@ -239,13 +251,14 @@ Get-Content -Path (Join-Path $PSScriptRoot serviceEndpointRequest.json) `
             | ConvertFrom-Json `
             | Set-Variable serviceEndpointRequest
 
+$serviceEndpointDescription = "Created by $($MyInvocation.MyCommand.Name). Configured Managed Identity ${IdentityName} (clientId $($identity.clientId)) federated on ${federatedSubject} as ${ServiceConnectionRole} on scope ${ServiceConnectionScope}."
 $serviceEndpointRequest.authorization.parameters.servicePrincipalId = $identity.clientId
 $serviceEndpointRequest.authorization.parameters.tenantId = $identity.tenantId
 $serviceEndpointRequest.data.subscriptionId = $IdentitySubscriptionId
 $serviceEndpointRequest.data.subscriptionName = $subscription.name
-$serviceEndpointRequest.description = "Created with $($MyInvocation.MyCommand.Name)"
+$serviceEndpointRequest.description = $serviceEndpointDescription
 $serviceEndpointRequest.name = $ServiceConnectionName
-$serviceEndpointRequest.serviceEndpointProjectReferences[0].description = "Created with $($MyInvocation.MyCommand.Name)"
+$serviceEndpointRequest.serviceEndpointProjectReferences[0].description = $serviceEndpointDescription
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $ServiceConnectionName
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id = $projectId
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
