@@ -10,7 +10,7 @@
     https://aka.ms/azdo-rm-workload-identity
 
 .EXAMPLE
-    ./create_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg -SubscriptionId 00000000-0000-0000-0000-000000000000
+    ./create_azurerm_msi_oidc_service_connection.ps1 -Project MyProject -OrganizationUrl https://dev.azure.com/MyOrg -SubscriptionId 00000000-0000-0000-0000-000000000000
 #> 
 #Requires -Version 7.2
 
