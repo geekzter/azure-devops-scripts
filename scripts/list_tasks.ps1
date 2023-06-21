@@ -11,6 +11,10 @@ param (
 
     [parameter(Mandatory=$false)]
     [switch]
+    $AzureTasksOnly,
+
+    [parameter(Mandatory=$false)]
+    [switch]
     $DeprecatedTasksOnly,
 
     [parameter(Mandatory=$false)]
@@ -35,12 +39,15 @@ foreach ($taskJson in $taskJsonLocations) {
 }
 
 $tasks | ForEach-Object {[PSCustomObject]$_} `
+       | Where-Object {!$AzureTasksOnly -or ($_ | Select-Object -ExpandProperty inputs | Where-Object -Property type -ieq 'connectedService:AzureRM')} `
        | Where-Object {!$DeprecatedTasksOnly -or $_.deprecated} `
        | ForEach-Object {
-    "{0}@{1}" -f $_.name, $_.version.Major | Set-Variable fullName
-    $_ | Add-Member -MemberType NoteProperty -Name fullName -Value $fullName
-    $_
-} | Set-Variable tasks
+            "{0}@{1}" -f $_.name, $_.version.Major | Set-Variable fullName
+            $_ | Add-Member -MemberType NoteProperty -Name fullName -Value $fullName
+            $_
+       } `
+       | Sort-Object -Property fullName `
+       | Set-Variable tasks
 
 if ($ShowTaskIdsOnly) {
     $tasks | Select-Object -ExpandProperty id | Get-Unique
