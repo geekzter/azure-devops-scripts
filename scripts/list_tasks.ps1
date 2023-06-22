@@ -39,7 +39,7 @@ foreach ($taskJson in $taskJsonLocations) {
 }
 
 $tasks | ForEach-Object {[PSCustomObject]$_} `
-       | Where-Object {!$AzureTasksOnly -or ($_ | Select-Object -ExpandProperty inputs | Where-Object -Property type -ieq 'connectedService:AzureRM')} `
+       | Where-Object {!$AzureTasksOnly -or ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue | Where-Object -Property type -ieq 'connectedService:AzureRM')} `
        | Where-Object {!$DeprecatedTasksOnly -or $_.deprecated} `
        | ForEach-Object {
             "{0}@{1}" -f $_.name, $_.version.Major | Set-Variable fullName
