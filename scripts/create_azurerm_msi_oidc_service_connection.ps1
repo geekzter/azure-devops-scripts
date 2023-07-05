@@ -162,8 +162,9 @@ if (!$projectId) {
 }
 
 # Test whether Service Connection already exists
+$serviceConnectionSubscriptionName = $(az account show --subscription $serviceConnectionSubscriptionId --query name -o tsv)
 if (!$ServiceConnectionName) {
-    $ServiceConnectionName = $(az account show --subscription $serviceConnectionSubscriptionId --query name -o tsv)
+    $ServiceConnectionName = $serviceConnectionSubscriptionName
     $serviceConnectionResourceGroupName = $ServiceConnectionScope.Split('/')[4]
     if ($serviceConnectionResourceGroupName) {
         $ServiceConnectionName += "-${serviceConnectionResourceGroupName}"
@@ -259,8 +260,8 @@ Get-Content -Path (Join-Path $PSScriptRoot serviceEndpointRequest.json) `
 $serviceEndpointDescription = "Created by $($MyInvocation.MyCommand.Name). Configured Managed Identity ${IdentityName} (clientId $($identity.clientId)) federated on ${federatedSubject} as ${ServiceConnectionRole} on scope ${ServiceConnectionScope}."
 $serviceEndpointRequest.authorization.parameters.servicePrincipalId = $identity.clientId
 $serviceEndpointRequest.authorization.parameters.tenantId = $identity.tenantId
-$serviceEndpointRequest.data.subscriptionId = $IdentitySubscriptionId
-$serviceEndpointRequest.data.subscriptionName = $subscription.name
+$serviceEndpointRequest.data.subscriptionId = $serviceConnectionSubscriptionId
+$serviceEndpointRequest.data.subscriptionName = $serviceConnectionSubscriptionName
 $serviceEndpointRequest.description = $serviceEndpointDescription
 $serviceEndpointRequest.name = $ServiceConnectionName
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].description = $serviceEndpointDescription
@@ -268,6 +269,7 @@ $serviceEndpointRequest.serviceEndpointProjectReferences[0].name = $ServiceConne
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.id = $projectId
 $serviceEndpointRequest.serviceEndpointProjectReferences[0].projectReference.name = $Project
 $serviceEndpointRequest | ConvertTo-Json -Depth 4 | Set-Variable serviceEndpointRequestBody
+Write-Debug "Service connection request body: `n${serviceEndpointRequestBody}"
 
 $apiUri = "${OrganizationUrl}/_apis/serviceendpoint/endpoints"
 if ($serviceEndpointId) {
