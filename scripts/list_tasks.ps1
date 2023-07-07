@@ -41,8 +41,13 @@ if (!$RepoDirectory) {
     }
 }
 
-Get-ChildItem -Path (Join-Path $RepoDirectory task.json) -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
-                                                                                                       | Set-Variable taskJsonLocations
+Get-ChildItem -Path $RepoDirectory `
+              -Filter task.json `
+              -Recurse -Force `
+              -ErrorAction SilentlyContinue `
+              | Where-Object DirectoryName -notmatch _generated `
+              | Select-Object -ExpandProperty FullName `
+              | Set-Variable taskJsonLocations
 
 if (!$taskJsonLocations) {
     Write-Error "No task.json files found in ${RepoDirectory}, specify -RepoDirectory"
@@ -51,6 +56,7 @@ if (!$taskJsonLocations) {
                                                      
 [System.Collections.ArrayList]$tasks = @()
 foreach ($taskJson in $taskJsonLocations) {
+    Write-Host "Processing ${taskJson}"
     Write-Debug $taskJson
 
     Get-Content $taskJson | ConvertFrom-Json -AsHashtable | Set-Variable task
