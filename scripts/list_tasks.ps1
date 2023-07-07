@@ -24,7 +24,7 @@ param (
 
     [parameter(Mandatory=$false)]
     [string[]]
-    #$Property=@("id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion")
+    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion")
     $Property=@("fullName","id","name","friendlyName","version","majorVersion")
 ) 
 
@@ -52,7 +52,10 @@ if (!$taskJsonLocations) {
 [System.Collections.ArrayList]$tasks = @()
 foreach ($taskJson in $taskJsonLocations) {
     Write-Debug $taskJson
+
     Get-Content $taskJson | ConvertFrom-Json -AsHashtable | Set-Variable task
+    Split-Path $taskJson -Parent | Split-Path -Leaf | Set-Variable taskJsonDirectoryName
+    $task.Add("directoryName", $taskJsonDirectoryName) | Out-Null
     $task | Format-Table | Out-String | Write-Debug
     $tasks.Add($task) | Out-Null
 }
@@ -75,6 +78,9 @@ if ($Format -eq "Ids") {
                 $_ | Add-Member -MemberType NoteProperty -Name fullName -Value $fullName
                 $_ | Add-Member -MemberType NoteProperty -Name majorVersion -Value $_.version.Major
                 $_.version = ("{0}.{1}.{2}" -f $_.version.Major, $_.version.Minor, $_.version.Patch)
+                if ($_.deprecated -ne $true) {
+                    $_ | Add-Member -MemberType NoteProperty -Name deprecated -Value $false
+                }
                 $_
            } `
            | Sort-Object -Property fullName `
@@ -89,6 +95,6 @@ $tasks | Format-Table
 if ($Format -eq "Csv") {
     $csvFullName = "$((New-TemporaryFile).FullName).csv"
     $tasks | Select-Object -ExcludeProperty description, helpMarkDown, releaseNotes `
-           | Export-Csv -Path $csvFullName
+           | Export-Csv -Path $csvFullName -UseQuotes Always
     Write-Host "Results exported to ${csvFullName}"
 }
