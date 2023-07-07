@@ -24,7 +24,7 @@ param (
 
     [parameter(Mandatory=$false)]
     [string[]]
-    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion")
+    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion","isAzureTask")
     $Property=@("fullName","id","name","friendlyName","version","majorVersion")
 ) 
 
@@ -56,7 +56,6 @@ if (!$taskJsonLocations) {
                                                      
 [System.Collections.ArrayList]$tasks = @()
 foreach ($taskJson in $taskJsonLocations) {
-    Write-Host "Processing ${taskJson}"
     Write-Debug $taskJson
 
     Get-Content $taskJson | ConvertFrom-Json -AsHashtable | Set-Variable task
@@ -68,7 +67,18 @@ foreach ($taskJson in $taskJsonLocations) {
 
 # Filter tasks
 $tasks | ForEach-Object {[PSCustomObject]$_} `
-       | Where-Object {!$AzureTasksOnly -or ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue | Where-Object -Property type -ieq 'connectedService:AzureRM')} `
+       | ForEach-Object {
+            $_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue `
+               | Where-Object -Property type -ieq 'connectedService:AzureRM' `
+               | Set-Variable azureRmProperty
+            if ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue | Where-Object -Property type -ieq 'connectedService:AzureRM') {
+                $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $true
+            } else {
+                $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $false
+            }
+            $_
+         } `
+       | Where-Object {!$AzureTasksOnly -or $_.isAzureTask} `
        | Where-Object {!$DeprecatedTasksOnly -or $_.deprecated} `
        | Set-Variable tasks
 
