@@ -52,12 +52,17 @@ jobs:
 
   steps:
   - task: AzureCLI@2
-    displayName: 'rename_service_connection_applications.ps1'
+    displayName: 'get_organization_id.ps1'
     inputs:
       azureSubscription: '$(serviceConnection)'
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
-        ./get_organization_id.ps1
+        if ($env:SYSTEM_DEBUG -eq "true") {
+          $InformationPreference = "Continue"
+          $VerbosePreference = "Continue"
+          $DebugPreference = "Continue"
+        }
+        ./get_organization_id.ps1 -OrganizationUrl $(System.CollectionUri)
       failOnStandardError: true
       workingDirectory: '$(scriptDirectory)'
