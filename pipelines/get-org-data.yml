@@ -54,7 +54,7 @@ jobs:
   - task: AzureCLI@2
     displayName: 'rename_service_connection_applications.ps1'
     inputs:
-      azureSubscription: '$(azureConnection)'
+      azureSubscription: '$(serviceConnection)'
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
