@@ -52,7 +52,7 @@ az rest --method get `
         | ConvertFrom-Json `
         | Set-Variable account
 if (!$account) {
-  Write-Error "Could not find account for organization '${organizationName}'"
+  Write-Error "Could not find account for organization '${organizationName}', is $(az account show --query user.name -o tsv) a member of this organization?"
   exit 2
 }
 $accountsJson | Write-Debug
