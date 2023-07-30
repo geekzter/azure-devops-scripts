@@ -155,7 +155,7 @@ function Login-Az (
         if ($env:CODESPACES -ieq "true") {
             $azLoginSwitches = "--use-device-code "
         }
-        if ($TenantId) {
+        if ($TenantId -and ($TenantId -ne [guid]::Empty)) {
             Write-Debug "az login -t ${TenantId} --allow-no-subscriptions $($azLoginSwitches)"
             az login -t $TenantId -o none --allow-no-subscriptions $($azLoginSwitches)
         } else {
