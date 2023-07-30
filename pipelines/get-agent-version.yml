@@ -51,5 +51,5 @@ jobs:
         ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 3 -VersionPreference Prerelease
         ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 3 -VersionPreference Prerelease
       displayName: 'Test get_agent_version.ps1'
-      workingDirectory: '$(Build.SourcesDirectory)/scripts'
+      workingDirectory: '$(Build.SourcesDirectory)/scripts/pipelines'
       retryCountOnTaskFailure: ${{ parameters.retryCount }} # In case of GitHub rate limiting
