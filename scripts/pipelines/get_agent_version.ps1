@@ -18,7 +18,7 @@ param (
     $MajorVersion=2
 ) 
 
-. (Join-Path $PSScriptRoot functions.ps1)
+. (Join-Path $PSScriptRoot .. functions.ps1)
 
 $agentPackageUrl = Get-AgentPackageUrl -ExcludeNode6:$ExcludeNode6 `
                                        -VersionPreference $VersionPreference `

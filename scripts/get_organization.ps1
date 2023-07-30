@@ -4,8 +4,15 @@ param (
     [parameter(Mandatory=$true,ParameterSetName="Organization",HelpMessage="Url of the Azure DevOps Organization")]
     [ValidateNotNullOrEmpty()]
     [uri]
-    $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI)
+    $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI),
+    
+    [parameter(Mandatory=$false,HelpMessage="Azure Active Directory tenant id")]
+    [guid]
+    $TenantId=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID)
 ) 
+
+Write-Debug $MyInvocation.line
+. (Join-Path $PSScriptRoot functions.ps1)
 
 $OrganizationUrl = $OrganizationUrl.ToString().TrimEnd('/')
 if ($OrganizationUrl -match "^https://dev.azure.com/(\w+)|^https://(\w+).visualstudio.com/") {
@@ -14,6 +21,8 @@ if ($OrganizationUrl -match "^https://dev.azure.com/(\w+)|^https://(\w+).visuals
   Write-Error "Invalid organization url. Please provide a valid url of the form https://dev.azure.com/{organization} or https://{organization}.visualstudio.com"
   exit 1
 }
+
+Login-Az -TenantId $TenantId
 
 Write-Host "Retrieving member information from profile REST API..."
 $profileUrl = "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1-preview.1"
@@ -25,6 +34,10 @@ az rest --method get `
         | Tee-Object -Variable profileJson `
         | ConvertFrom-Json `
         | Set-Variable profile
+if (!$profile) {
+  Write-Error "Could not find profile for user $(az account show --query user.name -o tsv)"
+  exit 2
+}
 $profileJson | Write-Debug
 
 Write-Host "Retrieving organization from accounts REST API..."
@@ -38,11 +51,11 @@ az rest --method get `
         | Tee-Object -Variable accountsJson `
         | ConvertFrom-Json `
         | Set-Variable account
-
-if (!$account -eq $null) {
+if (!$account) {
   Write-Error "Could not find account for organization '${organizationName}'"
   exit 2
 }
 $accountsJson | Write-Debug
+
 Add-Member -InputObject $account -NotePropertyName issuerUrl -NotePropertyValue "https://vstoken.dev.azure.com/$($account.accountId)"
 $account | Format-List

@@ -135,26 +135,33 @@ function Get-AgentPackageUrl (
 }
 
 function Login-Az (
-    [parameter(Mandatory=$false)][switch]$DisplayMessages=$false,
-    [parameter(Mandatory=$false)][guid]$TenantId=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID)
+    [parameter(Mandatory=$false)]$TenantId#=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID)
 ) {
+    if (!(Get-Command az)) {
+        Write-Error "Azure CLI is not installed, get it at http://aka.ms/azure-cli"
+        exit 1
+    }
+
     # Are we logged in? If so, is it the right tenant?
     $azureAccount = $null
     az account show 2>$null | ConvertFrom-Json | Set-Variable azureAccount
-    if ($azureAccount -and $TenantId -and ($azureAccount.tenantId -ine $TenantId)) {
-        Write-Warning "Logged into tenant $($azureAccount.tenantId) instead of ${TenantId}"
+    if ($azureAccount -and `
+        ($TenantId)   -and `
+        ($azureAccount.tenantId -ine $TenantId)) {
+        Write-Warning "Logged into tenant $($azureAccount.tenant_id) instead of ${TenantId}"
         $azureAccount = $null
     }
-    if (!$azureAccount) {
-        if ($IsLinux) {
-            $azLoginSwitches = "--use-device-code"
+    if (-not $azureAccount) {
+        if ($env:CODESPACES -ieq "true") {
+            $azLoginSwitches = "--use-device-code "
         }
-        if ($env:ARM_TENANT_ID) {
-            Write-Debug "az login -t ${env:ARM_TENANT_ID} -o none $($azLoginSwitches)"
-            az login -t $env:ARM_TENANT_ID -o none $($azLoginSwitches)
+        if ($TenantId) {
+            Write-Debug "az login -t ${TenantId} --allow-no-subscriptions $($azLoginSwitches)"
+            az login -t $TenantId -o none --allow-no-subscriptions $($azLoginSwitches)
         } else {
-            Write-Debug "az login -o none $($azLoginSwitches)"
-            az login -o none $($azLoginSwitches)
+            Write-Debug "az login $($azLoginSwitches)"
+            az login $($azLoginSwitches) -o none
+            az account show 2>$null | ConvertFrom-Json | Set-Variable azureAccount
         }
     }
 }

@@ -50,7 +50,7 @@ jobs:
 
   steps:
   - task: AzureCLI@2
-    displayName: 'get_organization_id.ps1'
+    displayName: 'get_organization.ps1'
     inputs:
       azureSubscription: '$(serviceConnection)'
       scriptType: pscore
