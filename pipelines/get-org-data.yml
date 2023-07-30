@@ -61,7 +61,7 @@ jobs:
           $VerbosePreference = "Continue"
           $DebugPreference = "Continue"
         }
-        Write-Host "Accessing Azure DevOps using Service Connection '$(serviceConnection)'"
-        ./get_organization_id.ps1 -OrganizationUrl $(System.CollectionUri)
+        Write-Host Using Service Connection '$(serviceConnection)' to "access Azure DevOps"
+        ./get_organization.ps1 -OrganizationUrl $(System.CollectionUri)
       failOnStandardError: true
       workingDirectory: '$(scriptDirectory)'
