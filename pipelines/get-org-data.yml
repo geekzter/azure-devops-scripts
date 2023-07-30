@@ -1,5 +1,11 @@
 name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-$(Build.BuildId)
 
+parameters:
+- name: serviceConnection
+  displayName: Override Service Connection
+  type: string
+  default: '<from azdoConnection variable>'
+
 pr:
   autoCancel: false
   branches:
@@ -30,6 +36,11 @@ variables:
   value: true
 - name: AZURE_EXTENSION_USE_DYNAMIC_INSTALL
   value: yes_without_prompt
+- name: serviceConnection
+  ${{ if eq(parameters.serviceConnection, '<from azdoConnection variable>') }}:
+    value: $[ variables['azdoConnection'] ]
+  ${{ else }}:
+    value: '${{ parameters.serviceConnection }}'
 
 jobs:
 - job: retrievalScripts
