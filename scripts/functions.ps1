@@ -135,7 +135,9 @@ function Get-AgentPackageUrl (
 }
 
 function Login-Az (
-    [parameter(Mandatory=$false)]$TenantId#=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID)
+    [parameter(Mandatory=$false)]
+    [guid]
+    $TenantId#=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID)
 ) {
     if (!(Get-Command az)) {
         Write-Error "Azure CLI is not installed, get it at http://aka.ms/azure-cli"
@@ -146,7 +148,7 @@ function Login-Az (
     $azureAccount = $null
     az account show 2>$null | ConvertFrom-Json | Set-Variable azureAccount
     if ($azureAccount -and `
-        ($TenantId)   -and `
+        ($TenantId -and ($TenantId -ne [guid]::Empty)) -and `
         ($azureAccount.tenantId -ine $TenantId)) {
         Write-Warning "Logged into tenant $($azureAccount.tenant_id) instead of ${TenantId}"
         $azureAccount = $null
