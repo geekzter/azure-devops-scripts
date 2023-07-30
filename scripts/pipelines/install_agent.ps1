@@ -39,7 +39,7 @@ param (
     $Remove
 ) 
 Write-Verbose $MyInvocation.line 
-. (Join-Path $PSScriptRoot functions.ps1)
+. (Join-Path $PSScriptRoot .. functions.ps1)
 
 if ($IsWindows) {
     Join-Path $env:ProgramFiles pipeline-agent | Set-Variable pipelineDirectory

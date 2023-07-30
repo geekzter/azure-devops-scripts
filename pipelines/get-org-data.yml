@@ -1,0 +1,67 @@
+parameters:
+- name: serviceConnection
+  displayName: Azure Service Connection Name
+  type: string
+  default: my-azure-subscription
+
+name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-${{ parameters.serviceConnection }}-$(Build.BuildId)
+
+
+pr:
+  autoCancel: false
+  branches:
+    include:
+    - '*'
+  drafts: false
+  paths:
+    exclude:
+    - '.devcontainer/**'  
+    - 'visuals/**'  
+    - '*.md'  
+schedules:
+- cron: '0 0 * * Tue,Fr'
+  displayName: 'Bi-weekly build (UTC)'
+  # Run if there are no changes
+  always: 'true'
+  branches:
+    include:
+    - master
+trigger: none
+
+variables:
+- name: scriptDirectory
+  value: $(Build.SourcesDirectory)/scripts
+- name: organizationName
+  value: ${{ split(variables['System.CollectionUri'],'/')[3] }}
+- name: AZURE_CORE_ONLY_SHOW_ERRORS
+  value: true
+- name: AZURE_EXTENSION_USE_DYNAMIC_INSTALL
+  value: yes_without_prompt
+- name: serviceConnection
+  value: '${{ parameters.serviceConnection }}'
+
+jobs:
+- job: retrievalScripts
+  displayName: 'Non-modifying tests'
+
+  pool:
+    name: 'Azure Pipelines'
+    vmImage: ubuntu-latest
+
+  steps:
+  - task: AzureCLI@2
+    displayName: 'get_organization.ps1'
+    inputs:
+      azureSubscription: '$(serviceConnection)'
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        if ($env:SYSTEM_DEBUG -eq "true") {
+          $InformationPreference = "Continue"
+          $VerbosePreference = "Continue"
+          $DebugPreference = "Continue"
+        }
+        Write-Host Using Service Connection '$(serviceConnection)' to "access Azure DevOps"
+        ./get_organization.ps1 -OrganizationUrl $(System.CollectionUri)
+      failOnStandardError: true
+      workingDirectory: '$(scriptDirectory)'
