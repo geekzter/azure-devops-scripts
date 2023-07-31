@@ -15,7 +15,7 @@ param (
     [guid]
     $TenantId=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID ?? [guid]::Empty)
 ) 
-
+$ErrorActionPreference = 'Stop'
 Write-Debug $MyInvocation.line
 . (Join-Path $PSScriptRoot functions.ps1)
 
@@ -28,7 +28,7 @@ if ($OrganizationUrl -match "^https://dev.azure.com/(\w+)|^https://(\w+).visuals
 }
 
 if ($Token) {
-  "Basic {0}" -f [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":${Token}")) `
+  "Basic {0}" -f [Convert]::ToBase64String([System.Text.ASCIIEncoding]::ASCII.GetBytes(":${Token}")) `
               | Set-Variable authHeader
 } else {
   Login-Az -TenantId $TenantId
@@ -50,6 +50,7 @@ Invoke-WebRequest -Uri $profileUrl `
                       "Content-Type" = "application/json"
                   } `
                   -Method Get `
+                  | Tee-Object -Variable profileResponse `
                   | Select-Object -ExpandProperty Content `
                   | Tee-Object -Variable profileJson `
                   | ConvertFrom-Json `
@@ -58,7 +59,8 @@ if (!$profile) {
   Write-Error "Could not find profile"
   exit 2
 }
-$profileJson | ConvertFrom-Json | ConvertTo-Json | Write-Debug
+$profileResponse | Format-List | Out-String | Write-Debug
+$profileJson | ConvertFrom-Json -Depth 4 | ConvertTo-Json -Depth 4 | Write-Debug
 $profile | Format-List | Out-String | Write-Debug
 
 Write-Host "Retrieving organization from accounts REST API..."
@@ -71,6 +73,7 @@ Invoke-WebRequest -Uri $accountsUrl `
                       "Content-Type" = "application/json"
                   } `
                   -Method Get `
+                  | Tee-Object -Variable accountsResponse `
                   | Select-Object -ExpandProperty Content `
                   | Tee-Object -Variable accountsJson `
                   | ConvertFrom-Json `
@@ -78,7 +81,8 @@ Invoke-WebRequest -Uri $accountsUrl `
                   | Tee-Object -Variable accounts `
                   | Where-Object { $_.accountName -eq $organizationName } `
                   | Set-Variable account
-$accountsJson | ConvertFrom-Json | ConvertTo-Json | Write-Debug
+$accountsResponse | Format-List | Out-String | Write-Debug
+$accountsJson | ConvertFrom-Json -Depth 4 | ConvertTo-Json -Depth 4 | Write-Debug
 $accounts | Format-Table | Out-String | Write-Debug
 if (!$account) {
   Write-Error "Could not find account for organization '${organizationName}'"
