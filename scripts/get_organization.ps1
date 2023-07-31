@@ -1,12 +1,13 @@
 #!/usr/bin/env pwsh
 #Requires -Version 7
+[CmdletBinding(DefaultParameterSetName = 'AAD')]
 param ( 
-    [parameter(Mandatory=$true,ParameterSetName="Organization",HelpMessage="Url of the Azure DevOps Organization")]
+    [parameter(Mandatory=$true,HelpMessage="Url of the Azure DevOps Organization")]
     [ValidateNotNullOrEmpty()]
     [uri]
     $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI),
     
-    [parameter(Mandatory=$false,HelpMessage="PAT token with read access on '...' scope",ParameterSetName='Token')]
+    [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'User Profile' scope",ParameterSetName='Token')]
     [string]
     $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN),
 
@@ -26,13 +27,18 @@ if ($OrganizationUrl -match "^https://dev.azure.com/(\w+)|^https://(\w+).visuals
   exit 1
 }
 
-if (!$Token) {
+if ($Token) {
+  "Basic {0}" -f [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":${Token}")) `
+              | Set-Variable authHeader
+} else {
   Login-Az -TenantId $TenantId
   az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                               --query "accessToken" `
                               --output tsv `
-                              | Set-Variable Token
+                              | Set-Variable aadToken
+  $authHeader = "Bearer ${aadToken}"
 }
+Write-Debug $authHeader
 
 Write-Host "Retrieving member information from profile REST API..."
 $profileUrl = "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1-preview.1"
@@ -40,7 +46,7 @@ Write-Debug $profileUrl
 Invoke-WebRequest -Uri $profileUrl `
                   -Headers @{
                       Accept         = "application/json"
-                      Authorization  = "Bearer $Token"
+                      Authorization  = $authHeader
                       "Content-Type" = "application/json"
                   } `
                   -Method Get `
@@ -61,7 +67,7 @@ Write-Debug $accountsUrl
 Invoke-WebRequest -Uri $accountsUrl `
                   -Headers @{
                       Accept         = "application/json"
-                      Authorization  = "Bearer $Token"
+                      Authorization  = $authHeader
                       "Content-Type" = "application/json"
                   } `
                   -Method Get `
