@@ -13,6 +13,10 @@ param (
     [switch]
     $AzureTasksOnly,
 
+    [parameter(Mandatory=$false, HelpMessage="Return only tasks that are using a Node runner")]
+    [switch]
+    $NodeTasksOnly,
+
     [parameter(Mandatory=$false)]
     [switch]
     $DeprecatedTasksOnly,
@@ -24,14 +28,14 @@ param (
 
     [parameter(Mandatory=$false)]
     [string[]]
-    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion","isAzureTask")
+    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion","isAzureTask","usesNode","usesNode10","usesNode16","usesNode20")
     $Property=@("fullName","id","name","friendlyName","version","majorVersion")
 ) 
 
 if (!$RepoDirectory) {
     # Try to find task repo directory
     $directoryElements = $PSScriptRoot.Split([IO.Path]::DirectorySeparatorChar)
-    $directoryElements[0..($directoryElements.Length-4)] -join [IO.Path]::DirectorySeparatorChar `
+    $directoryElements[0..($directoryElements.Length-5)] -join [IO.Path]::DirectorySeparatorChar `
                                                          | Set-Variable RepoBaseDirectory
 
     Join-Path $RepoBaseDirectory "microsoft" "azure-pipelines-tasks" | Set-Variable RepoDirectory
@@ -58,16 +62,32 @@ if (!$taskJsonLocations) {
 foreach ($taskJson in $taskJsonLocations) {
     Write-Debug $taskJson
 
-    Get-Content $taskJson | ConvertFrom-Json -AsHashtable | Set-Variable task
     Split-Path $taskJson -Parent | Split-Path -Leaf | Set-Variable taskJsonDirectoryName
+    Write-Verbose "Testing whether generated task.json file(s) exist(s)"
+    $generatedTaskJson = $null
+    Get-ChildItem -Path $RepoDirectory/_generated/${taskJsonDirectoryName}_Node*/task.json `
+                  | Sort-Object -Property FullName `
+                                -Descending `
+                  | Select-Object -ExpandProperty FullName `
+                                  -First 1
+                  | Set-Variable generatedTaskJson
+    if ($generatedTaskJson) {
+        Write-Verbose "Found generated configuration at ${generatedTaskJson}"
+        $taskJson = $generatedTaskJson
+    }
+
+    Write-Debug $taskJson
+    Get-Content $taskJson | ConvertFrom-Json -AsHashtable | Set-Variable task
     $task.Add("directoryName", $taskJsonDirectoryName) | Out-Null
     $task | Format-Table | Out-String | Write-Debug
     $tasks.Add($task) | Out-Null
 }
 
+
 # Filter tasks
 $tasks | ForEach-Object {[PSCustomObject]$_} `
        | ForEach-Object {
+            # Azure
             $_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue `
                | Where-Object -Property type -ieq 'connectedService:AzureRM' `
                | Set-Variable azureRmProperty
@@ -76,11 +96,30 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
             } else {
                 $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $false
             }
+            # Runner
+            $_ | Add-Member -MemberType NoteProperty -Name usesNode6  -Value ($_.execution.Node6  -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name usesNode10 -Value ($_.execution.Node10 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name usesNode16 -Value ($_.execution.Node16 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name usesNode20 -Value ($_.execution.Node20 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name usesNode   -Value ($_.usesNode6 -or $_.usesNode10 -or $_.usesNode16 -or $_.usesNode20)
             $_
          } `
        | Where-Object {!$AzureTasksOnly -or $_.isAzureTask} `
        | Where-Object {!$DeprecatedTasksOnly -or $_.deprecated} `
+       | Where-Object {!$NodeTasksOnly -or $_.usesNode} `
        | Set-Variable tasks
+
+# Add properties based on other parameters
+if ($NodeTasksOnly) {
+    [System.Collections.Generic.List[string]]$PropertyList = $Property
+    $nodeProperties = @("usesNode","usesNode6","usesNode10","usesNode16","usesNode20")
+    foreach ($nodeProperty in $nodeProperties) {
+        if ($PropertyList -notcontains $nodeProperty) {
+            $PropertyList.Add($nodeProperty)
+        }
+    }
+    $Property = $PropertyList.ToArray()    
+}
 
 # Format results
 if ($Format -eq "Ids") {
@@ -106,6 +145,15 @@ if ($Format -eq "Ids") {
 
 # Display results
 $tasks | Format-Table
+
+if ($NodeTasksOnly) {
+    foreach ($nodeProperty in $nodeProperties) {
+        $tasks | Group-Object -Property $nodeProperty `
+               | Where-Object {$_.Name -eq 'True'} `
+               | Select-Object -Property Count `
+               | Add-Member -MemberType NoteProperty -Name NodeProperty -Value $nodeProperty -PassThru
+    }
+}
 
 # Export results
 if ($Format -eq "Csv") {
