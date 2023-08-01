@@ -31,7 +31,7 @@ param (
 if (!$RepoDirectory) {
     # Try to find task repo directory
     $directoryElements = $PSScriptRoot.Split([IO.Path]::DirectorySeparatorChar)
-    $directoryElements[0..($directoryElements.Length-4)] -join [IO.Path]::DirectorySeparatorChar `
+    $directoryElements[0..($directoryElements.Length-5)] -join [IO.Path]::DirectorySeparatorChar `
                                                          | Set-Variable RepoBaseDirectory
 
     Join-Path $RepoBaseDirectory "microsoft" "azure-pipelines-tasks" | Set-Variable RepoDirectory
@@ -65,9 +65,11 @@ foreach ($taskJson in $taskJsonLocations) {
     $tasks.Add($task) | Out-Null
 }
 
+
 # Filter tasks
 $tasks | ForEach-Object {[PSCustomObject]$_} `
        | ForEach-Object {
+            # Azure
             $_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue `
                | Where-Object -Property type -ieq 'connectedService:AzureRM' `
                | Set-Variable azureRmProperty
@@ -76,11 +78,19 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
             } else {
                 $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $false
             }
+            # Runner
+            $_ | Add-Member -MemberType NoteProperty -Name node6  -Value ($_.execution.Node6 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name node10 -Value ($_.execution.Node10 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name node16 -Value ($_.execution.Node16 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name node20 -Value ($_.execution.Node20 -ne $null)
+            $_ | Add-Member -MemberType NoteProperty -Name node   -Value ($_.node6 -or $_.node10 -or $_.node16 -or $_.node20)
             $_
          } `
        | Where-Object {!$AzureTasksOnly -or $_.isAzureTask} `
        | Where-Object {!$DeprecatedTasksOnly -or $_.deprecated} `
        | Set-Variable tasks
+
+$global:foo = $tasks
 
 # Format results
 if ($Format -eq "Ids") {
