@@ -90,8 +90,6 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
        | Where-Object {!$DeprecatedTasksOnly -or $_.deprecated} `
        | Set-Variable tasks
 
-$global:foo = $tasks
-
 # Format results
 if ($Format -eq "Ids") {
     $tasks | Select-Object -ExpandProperty id `
