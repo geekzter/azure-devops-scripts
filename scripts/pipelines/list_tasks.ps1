@@ -24,7 +24,7 @@ param (
 
     [parameter(Mandatory=$false)]
     [string[]]
-    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion","isAzureTask")
+    #$Property=@("directoryName","id","name","friendlyName","author","helpUrl","category","visibility","runsOn","version","preview","instanceNameFormat","groups","inputs","dataSourceBindings","execution","fullName","majorVersion","isAzureTask","node","node10","node16","node20")
     $Property=@("fullName","id","name","friendlyName","version","majorVersion")
 ) 
 
