@@ -58,16 +58,22 @@ if (!$taskJsonLocations) {
 foreach ($taskJson in $taskJsonLocations) {
     Write-Debug $taskJson
 
-    Write-Host "Processing $taskJson"
-
     Split-Path $taskJson -Parent | Split-Path -Leaf | Set-Variable taskJsonDirectoryName
-    $node16TaskJson = (Join-Path $RepoDirectory _generated "${taskJsonDirectoryName}_Node16" "task.json")
-    Write-Verbose "Testing whether ${node16TaskJson} exists"
-    if (Test-Path $node16TaskJson) {
-        Write-Verbose "Found Node16 configuration at ${node16TaskJson}"
-        $taskJson = $node16TaskJson
+    Write-Verbose "Testing whether generated task.json file(s) exist(s)"
+    $generatedTaskJson = $null
+    Get-ChildItem -Path $RepoDirectory/_generated/${taskJsonDirectoryName}_Node*/task.json `
+                  | Sort-Object -Property FullName `
+                                -Descending `
+                  | Select-Object -ExpandProperty FullName `
+                                  -First 1
+                  | Set-Variable generatedTaskJson
+    if ($generatedTaskJson) {
+        Write-Verbose "Found generated configuration at ${generatedTaskJson}"
+        pause
+        $taskJson = $generatedTaskJson
     }
 
+    Write-Debug $taskJson
     Get-Content $taskJson | ConvertFrom-Json -AsHashtable | Set-Variable task
     $task.Add("directoryName", $taskJsonDirectoryName) | Out-Null
     $task | Format-Table | Out-String | Write-Debug
