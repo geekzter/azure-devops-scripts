@@ -55,12 +55,12 @@ Invoke-WebRequest -Uri $profileUrl `
                   | Tee-Object -Variable profileJson `
                   | ConvertFrom-Json `
                   | Set-Variable profile
+$profileResponse | Format-List | Out-String | Write-Debug
+$profileJson | ConvertFrom-Json -Depth 4 | ConvertTo-Json -Depth 4 | Write-Debug
 if (!$profile) {
   Write-Error "Could not find profile"
   exit 2
 }
-$profileResponse | Format-List | Out-String | Write-Debug
-$profileJson | ConvertFrom-Json -Depth 4 | ConvertTo-Json -Depth 4 | Write-Debug
 $profile | Format-List | Out-String | Write-Debug
 
 Write-Host "Retrieving organization from accounts REST API..."
