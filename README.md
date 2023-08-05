@@ -20,3 +20,7 @@ This repository contains a few [PowerShell](https://github.com/PowerShell/PowerS
 - Install the agent using [install_agent.ps1](scripts/pipelines/install_agent.ps1) 
 - List Azure DevOps build & release tasks with [list_tasks.ps1](scripts/pipelines/list_tasks.ps1)
 
+## Scripts in other repositories
+
+- The [azure-identity-scripts](https://github.com/geekzter/azure-identity-scripts#azure-devops) repository contains various [scripts](https://github.com/geekzter/azure-identity-scripts/tree/main/scripts/azure-devops) that interact with Azure Active Directory e.g. to manage Service Connections
+- The [azure-pipeline-examples](https://github.com/geekzter/azure-pipeline-examples) repository contains YAML that covers some scripting examples e.g. handling [scripting errors](https://github.com/geekzter/azure-pipeline-examples/blob/main/suppress-script-error.yml)
