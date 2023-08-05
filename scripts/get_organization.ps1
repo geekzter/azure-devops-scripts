@@ -1,16 +1,21 @@
 #!/usr/bin/env pwsh
 #Requires -Version 7
+[CmdletBinding(DefaultParameterSetName = 'AAD')]
 param ( 
-    [parameter(Mandatory=$true,ParameterSetName="Organization",HelpMessage="Url of the Azure DevOps Organization")]
+    [parameter(Mandatory=$true,HelpMessage="Url of the Azure DevOps Organization")]
     [ValidateNotNullOrEmpty()]
     [uri]
     $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI),
     
-    [parameter(Mandatory=$false,HelpMessage="Azure Active Directory tenant id")]
+    [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'User Profile' scope",ParameterSetName='Token')]
+    [string]
+    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN),
+
+    [parameter(Mandatory=$false,HelpMessage="Azure Active Directory tenant id",ParameterSetName='AAD')]
     [guid]
     $TenantId=($env:ARM_TENANT_ID ?? $env:AZURE_TENANT_ID ?? [guid]::Empty)
 ) 
-
+$ErrorActionPreference = 'Stop'
 Write-Debug $MyInvocation.line
 . (Join-Path $PSScriptRoot functions.ps1)
 
@@ -22,40 +27,67 @@ if ($OrganizationUrl -match "^https://dev.azure.com/(\w+)|^https://(\w+).visuals
   exit 1
 }
 
-Login-Az -TenantId $TenantId
+if ($Token) {
+  "Basic {0}" -f [Convert]::ToBase64String([System.Text.ASCIIEncoding]::ASCII.GetBytes(":${Token}")) `
+              | Set-Variable authHeader
+} else {
+  Login-Az -TenantId $TenantId
+  az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
+                              --query "accessToken" `
+                              --output tsv `
+                              | Set-Variable aadToken
+  $authHeader = "Bearer ${aadToken}"
+}
+Write-Debug $authHeader
 
 Write-Host "Retrieving member information from profile REST API..."
 $profileUrl = "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1-preview.1"
 Write-Debug $profileUrl
-az rest --method get `
-        --uri $profileUrl `
-        --resource 499b84ac-1321-427f-aa17-267ca6975798 `
-        -o json `
-        | Tee-Object -Variable profileJson `
-        | ConvertFrom-Json `
-        | Set-Variable profile
+Invoke-WebRequest -Uri $profileUrl `
+                  -Headers @{
+                      Accept         = "application/json"
+                      Authorization  = $authHeader
+                      "Content-Type" = "application/json"
+                  } `
+                  -Method Get `
+                  | Tee-Object -Variable profileResponse `
+                  | Select-Object -ExpandProperty Content `
+                  | Tee-Object -Variable profileJson `
+                  | ConvertFrom-Json `
+                  | Set-Variable profile
+$profileResponse | Format-List | Out-String | Write-Debug
+$profileJson | ConvertFrom-Json -Depth 4 | ConvertTo-Json -Depth 4 | Write-Debug
 if (!$profile) {
-  Write-Error "Could not find profile for user $(az account show --query user.name -o tsv)"
+  Write-Error "Could not find profile"
   exit 2
 }
-$profileJson | Write-Debug
+$profile | Format-List | Out-String | Write-Debug
 
 Write-Host "Retrieving organization from accounts REST API..."
 $accountsUrl = "https://app.vssps.visualstudio.com/_apis/accounts?api-version=7.1-preview.1&memberId=$($profile.id)"
 Write-Debug $accountsUrl
-az rest --method get `
-        --uri $accountsUrl `
-        --resource 499b84ac-1321-427f-aa17-267ca6975798 `
-        --query "value[?accountName=='${organizationName}'] | [0]" `
-        -o json `
-        | Tee-Object -Variable accountsJson `
-        | ConvertFrom-Json `
-        | Set-Variable account
+Invoke-WebRequest -Uri $accountsUrl `
+                  -Headers @{
+                      Accept         = "application/json"
+                      Authorization  = $authHeader
+                      "Content-Type" = "application/json"
+                  } `
+                  -Method Get `
+                  | Tee-Object -Variable accountsResponse `
+                  | Select-Object -ExpandProperty Content `
+                  | Tee-Object -Variable accountsJson `
+                  | ConvertFrom-Json `
+                  | Select-Object -ExpandProperty value `
+                  | Tee-Object -Variable accounts `
+                  | Where-Object { $_.accountName -eq $organizationName } `
+                  | Set-Variable account
+$accountsResponse | Format-List | Out-String | Write-Debug
+$accountsJson | ConvertFrom-Json -Depth 4 | ConvertTo-Json -Depth 4 | Write-Debug
+$accounts | Format-Table | Out-String | Write-Debug
 if (!$account) {
-  Write-Error "Could not find account for organization '${organizationName}', is $(az account show --query user.name -o tsv) a member of this organization?"
+  Write-Error "Could not find account for organization '${organizationName}'"
   exit 2
 }
-$accountsJson | Write-Debug
 
 Add-Member -InputObject $account -NotePropertyName issuerUrl -NotePropertyValue "https://vstoken.dev.azure.com/$($account.accountId)"
 $account | Format-List
