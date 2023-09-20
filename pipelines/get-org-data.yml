@@ -25,7 +25,7 @@ schedules:
   always: 'true'
   branches:
     include:
-    - master
+    - main
 trigger: none
 
 variables:
@@ -51,6 +51,7 @@ jobs:
   steps:
   - task: AzureCLI@2
     displayName: 'get_organization.ps1'
+    continueOnError: true
     inputs:
       azureSubscription: '$(serviceConnection)'
       scriptType: pscore
