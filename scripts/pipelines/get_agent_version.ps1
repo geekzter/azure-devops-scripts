@@ -15,7 +15,7 @@ param (
     [parameter(Mandatory=$false)]
     [ValidateSet(2, 3)]
     [int]
-    $MajorVersion=2
+    $MajorVersion=3
 ) 
 
 . (Join-Path $PSScriptRoot .. functions.ps1)
