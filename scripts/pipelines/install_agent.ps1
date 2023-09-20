@@ -34,9 +34,17 @@ param (
     [string]
     $OrganizationUrl=$env:AZDO_ORG_SERVICE_URL,
 
+    [parameter(Mandatory=$false)]
+    [switch]
+    $UseAzureCliSession,
+
     [parameter(Mandatory=$false,ParameterSetName='Remove')]
     [switch]
-    $Remove
+    $Remove,
+
+    [parameter(Mandatory=$false)][string]
+    [ValidateSet("Previous", "Current", "Prerelease")]
+    $VersionPreference="Current"
 ) 
 Write-Verbose $MyInvocation.line 
 . (Join-Path $PSScriptRoot .. functions.ps1)
@@ -72,11 +80,14 @@ if ($Remove) {
             exit 1
         }
 
-        Get-AccessToken -Token $Token | Set-Variable aadToken
 
         Write-Verbose "Removing agent..."
-        . "$(Join-Path . $script)" remove --auth PAT --token $aadToken 
-        
+        if ($UseAzureCliSession) {
+            Get-AccessToken -Token $Token | Set-Variable aadToken
+            . "$(Join-Path . $script)" remove --auth PAT --token $aadToken 
+        } else {
+            . "$(Join-Path . $script)" remove
+        }
         Remove-Directory $pipelineWorkDirectory
         Remove-Directory $pipelineDirectory
     } finally {
@@ -110,7 +121,7 @@ if ($Remove) {
         $presetToken = $env:AZURE_DEVOPS_EXT_PAT
         Push-Location $pipelineDirectory 
     
-        Get-AgentPackageUrl | Set-Variable agentPackageUrl
+        Get-AgentPackageUrl -VersionPreference $VersionPreference | Set-Variable agentPackageUrl
         Write-Debug "Agent package URL: '${agentPackageUrl}'"
         $agentPackageUrl -Split '/' | Select-Object -Last 1 | Set-Variable agentPackage
         Write-Debug "Agent package: '${agentPackage}'"
@@ -125,45 +136,57 @@ if ($Remove) {
             tar zxf $agentPackage -C $pipelineDirectory
         }
         Write-Host "Extracted '${agentPackage}' in '${pipelineDirectory}'"
-        
-        Get-AccessToken -Token $Token | Set-Variable aadToken
-        if (!$OrganizationUrl) {
-            $env:AZURE_DEVOPS_EXT_PAT = $aadToken
-            Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable, trying to infer..."
-            if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
-                Write-Host "Adding Azure CLI extension 'azure-devops'..."
-                az extension add -n azure-devops -y
-            }
-            Write-Debug "az devops configure --list"
-            az devops configure -l | Select-String -Pattern '^organization = (?<org>.+)$' | Set-Variable result
-            if ($result) {
-                $OrganizationUrl = $result.Matches.Groups[1].Value
-            }
-            if ($OrganizationUrl) {
-                Write-Host "Using organization URL set with 'az devops configure' : '${OrganizationUrl}'"
-            } else {
-                Write-Debug "az account show --query 'user.name' -o tsv"
-                (az account show --query "user.name" -o tsv) -split '@' | Select-Object -First 1 | Set-Variable alias
-                if ($alias) {
-                    $OrganizationUrl = "https://dev.azure.com/${alias}"
-                    Write-Host "Using user alias as organization name : '${OrganizationUrl}'"
-                } else {
-                    Write-Warning "Unable to determine Organization URL. Use the OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable to set it."
-                    exit 1
-                }
-            }
-        }
-        
+                
         # Configure agent
         Write-Host "Creating agent '${AgentName}' and adding it to pool '${AgentPool}' in organization '${OrganizationUrl}'..."
-        Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token '***' --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
-        . "$(Join-Path . $script)"  --unattended `
-                                    --url $OrganizationUrl `
-                                    --auth pat --token $aadToken `
-                                    --pool $AgentPool `
-                                    --agent $AgentName --replace `
-                                    --acceptTeeEula `
-                                    --work $pipelineWorkDirectory    
+        if ($UseAzureCliSession) {
+            Get-AccessToken -Token $Token | Set-Variable aadToken
+            if (!$OrganizationUrl) {
+                $env:AZURE_DEVOPS_EXT_PAT = $aadToken
+                Write-Host "Organization URL not set using -OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable, trying to infer..."
+                if (!(az extension list --query "[?name=='azure-devops'].version" -o tsv)) {
+                    Write-Host "Adding Azure CLI extension 'azure-devops'..."
+                    az extension add -n azure-devops -y
+                }
+                Write-Debug "az devops configure --list"
+                az devops configure -l | Select-String -Pattern '^organization = (?<org>.+)$' | Set-Variable result
+                if ($result) {
+                    $OrganizationUrl = $result.Matches.Groups[1].Value
+                }
+                if ($OrganizationUrl) {
+                    Write-Host "Using organization URL set with 'az devops configure' : '${OrganizationUrl}'"
+                } else {
+                    Write-Debug "az account show --query 'user.name' -o tsv"
+                    (az account show --query "user.name" -o tsv) -split '@' | Select-Object -First 1 | Set-Variable alias
+                    if ($alias) {
+                        $OrganizationUrl = "https://dev.azure.com/${alias}"
+                        Write-Host "Using user alias as organization name : '${OrganizationUrl}'"
+                    } else {
+                        Write-Warning "Unable to determine Organization URL. Use the OrganizationUrl parameter or AZDO_ORG_SERVICE_URL environment variable to set it."
+                        exit 1
+                    }
+                }
+            }
+            Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token '***' --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
+            if (!$OrganizationUrl) {
+                Write-Error "OrganizationUrl not spicified, exiting"
+                exit 1
+            }
+            . "$(Join-Path . $script)"  --unattended `
+                                        --url $OrganizationUrl `
+                                        --auth pat --token $aadToken `
+                                        --pool $AgentPool `
+                                        --agent $AgentName --replace `
+                                        --acceptTeeEula `
+                                        --work $pipelineWorkDirectory
+        } else {
+            Write-Debug "Running: $(Join-Path . $script) --url $OrganizationUrl --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
+            . "$(Join-Path . $script)"  --url $OrganizationUrl `
+                                        --pool $AgentPool `
+                                        --agent $AgentName --replace `
+                                        --acceptTeeEula `
+                                        --work $pipelineWorkDirectory
+        }
     } finally {
         $env:AZURE_DEVOPS_EXT_PAT = $presetToken
         Pop-Location
