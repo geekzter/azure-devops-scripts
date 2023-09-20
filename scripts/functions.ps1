@@ -1,6 +1,6 @@
 function Get-AADAccessToken () {
     # Log in with Azure CLI (if not logged in yet)
-    Login-Az -DisplayMessages
+    Login-Az
     Write-Debug "az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798"
     az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                                 --query "accessToken" `
@@ -56,7 +56,7 @@ function Get-AgentPackageUrl (
     [parameter(Mandatory=$false)]
     [ValidateSet(2, 3)]
     [int]
-    $MajorVersion=2
+    $MajorVersion=3
 ) {
     (Invoke-RestMethod -Uri https://api.github.com/repos/microsoft/azure-pipelines-agent/releases) `
                        | Where-Object {!$_.draft} `
