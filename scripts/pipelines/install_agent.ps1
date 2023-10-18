@@ -24,7 +24,13 @@ param (
     [string]
     $DeploymentGroup,
     
+    [parameter(Mandatory=$true,ParameterSetName='Environment')]
+    [ValidateNotNullOrEmpty()]
+    [string]
+    $Environment,
+    
     [parameter(Mandatory=$true,ParameterSetName='DeploymentGroup')]
+    [parameter(Mandatory=$true,ParameterSetName='Environment')]
     [ValidateNotNullOrEmpty()]
     [string]
     $Project,
@@ -184,6 +190,9 @@ if ($Remove) {
             }
             if ($DeploymentGroup) {
                 $poolArgs = "--deploymentgroup --deploymentgroupname '${DeploymentGroup}' --projectname '${Project}'"
+            }
+            if ($Environment) {
+                $poolArgs = "--environment --environmentname '${Environment}' --projectname '${Project}'"
             }
             if (!$OrganizationUrl) {
                 Write-Error "OrganizationUrl not specified, exiting"
