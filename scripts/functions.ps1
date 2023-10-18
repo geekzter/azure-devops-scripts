@@ -134,6 +134,17 @@ function Get-AgentPackageUrl (
     }
 }
 
+function Invoke-AgentConfig(
+    [parameter(Mandatory=$true)][string]$Command
+) {
+    if (!$Command) {
+        throw "No Command specified"
+    }
+    $Command -replace "\s+"," " | Set-Variable Command
+    "Runnnning: $Command" -replace "--token +(\S+)","--token ***" | Write-Debug
+    Invoke-Expression -Command $Command
+}
+
 function Login-Az (
     [parameter(Mandatory=$false)]
     [guid]

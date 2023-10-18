@@ -24,6 +24,11 @@ param (
     [string]
     $DeploymentGroup,
     
+    [parameter(Mandatory=$true,ParameterSetName='DeploymentGroup')]
+    [ValidateNotNullOrEmpty()]
+    [string]
+    $Project,
+    
     [parameter(Mandatory=$false)]
     [ValidateSet(2, 3)]
     [int]
@@ -91,9 +96,9 @@ if ($Remove) {
         Write-Verbose "Removing agent..."
         if ($UseAzureCliSession) {
             Get-AccessToken -Token $Token | Set-Variable aadToken
-            . "$(Join-Path . $script)" remove --auth PAT --token $aadToken 
+            Invoke-AgentConfig -Command "$(Join-Path . $script) remove --auth PAT --token ${aadToken}"
         } else {
-            . "$(Join-Path . $script)" remove
+            Invoke-AgentConfig -Command "$(Join-Path . $script) remove"
         }
         Remove-Directory $pipelineWorkDirectory
         Remove-Directory $pipelineDirectory
@@ -178,27 +183,25 @@ if ($Remove) {
                 $poolArgs = "--pool ${AgentPool}"
             }
             if ($DeploymentGroup) {
-                $poolArgs = "--deploymentgroup --deploymentgroupname ${DeploymentGroup}"
+                $poolArgs = "--deploymentgroup --deploymentgroupname ${DeploymentGroup} --project ${Project}"
             }
-            Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token '***' --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
             if (!$OrganizationUrl) {
-                Write-Error "OrganizationUrl not spicified, exiting"
+                Write-Error "OrganizationUrl not specified, exiting"
                 exit 1
             }
-            . "$(Join-Path . $script)"  --unattended `
-                                        --url $OrganizationUrl `
-                                        --auth pat --token $aadToken `
-                                        $poolArgs `
-                                        --agent $AgentName --replace `
-                                        --acceptTeeEula `
-                                        --work $pipelineWorkDirectory
+            Invoke-AgentConfig -Command "$(Join-Path . $script) --unattended `
+                                                                --url $OrganizationUrl `
+                                                                --auth pat --token $aadToken `
+                                                                $($poolArgs) `
+                                                                --agent $AgentName --replace `
+                                                                --acceptTeeEula `
+                                                                --work $pipelineWorkDirectory"
         } else {
-            Write-Debug "Running: $(Join-Path . $script) --url $OrganizationUrl --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
-            . "$(Join-Path . $script)"  --url $OrganizationUrl `
-                                        $poolArgs `
-                                        --agent $AgentName --replace `
-                                        --acceptTeeEula `
-                                        --work $pipelineWorkDirectory
+            Invoke-AgentConfig -Command "$(Join-Path . $script) --url $OrganizationUrl `
+                                                                $($poolArgs) `
+                                                                --agent $AgentName --replace `
+                                                                --acceptTeeEula `
+                                                                --work $pipelineWorkDirectory"
         }
     } finally {
         $env:AZURE_DEVOPS_EXT_PAT = $presetToken
