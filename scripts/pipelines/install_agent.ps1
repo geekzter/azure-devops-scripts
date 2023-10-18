@@ -189,8 +189,7 @@ if ($Remove) {
                 Write-Error "OrganizationUrl not specified, exiting"
                 exit 1
             }
-            Invoke-AgentConfig -Command "$(Join-Path . $script) --unattended `
-                                                                --url $OrganizationUrl `
+            Invoke-AgentConfig -Command "$(Join-Path . $script) --url $OrganizationUrl `
                                                                 --auth pat --token $aadToken `
                                                                 $($poolArgs) `
                                                                 --agent $AgentName --replace `
