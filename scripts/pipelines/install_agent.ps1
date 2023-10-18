@@ -183,7 +183,7 @@ if ($Remove) {
                 $poolArgs = "--pool ${AgentPool}"
             }
             if ($DeploymentGroup) {
-                $poolArgs = "--deploymentgroup --deploymentgroupname ${DeploymentGroup} --project ${Project}"
+                $poolArgs = "--deploymentgroup --deploymentgroupname '${DeploymentGroup}' --projectname '${Project}'"
             }
             if (!$OrganizationUrl) {
                 Write-Error "OrganizationUrl not specified, exiting"
