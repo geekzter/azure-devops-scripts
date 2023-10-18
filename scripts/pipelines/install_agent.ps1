@@ -6,16 +6,23 @@
     Installs and configures Azure Pipeline Agent. 
     All arguments are optional, as this script tries to infer as much as possible from the environment.
 #> 
+[CmdLetBinding(DefaultParameterSetName='Pool')]
 param ( 
-    [parameter(Mandatory=$false)]
+    [parameter(Mandatory=$false,ParameterSetName='Pool')]
+    [parameter(Mandatory=$false,ParameterSetName='DeploymentGroup')]
     [ValidateNotNullOrEmpty()]
     [string]
     $AgentName=[environment]::MachineName,
     
-    [parameter(Mandatory=$false)]
+    [parameter(Mandatory=$false,ParameterSetName='Pool')]
     [ValidateNotNullOrEmpty()]
     [string]
     $AgentPool='Default',
+    
+    [parameter(Mandatory=$true,ParameterSetName='DeploymentGroup')]
+    [ValidateNotNullOrEmpty()]
+    [string]
+    $DeploymentGroup,
     
     [parameter(Mandatory=$false)]
     [ValidateSet(2, 3)]
@@ -167,6 +174,12 @@ if ($Remove) {
                     }
                 }
             }
+            if ($AgentPool) {
+                $poolArgs = "--pool ${AgentPool}"
+            }
+            if ($DeploymentGroup) {
+                $poolArgs = "--deploymentgroup --deploymentgroupname ${DeploymentGroup}"
+            }
             Write-Debug "Running: $(Join-Path . $script) --unattended --url $OrganizationUrl --auth pat --token '***' --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
             if (!$OrganizationUrl) {
                 Write-Error "OrganizationUrl not spicified, exiting"
@@ -175,14 +188,14 @@ if ($Remove) {
             . "$(Join-Path . $script)"  --unattended `
                                         --url $OrganizationUrl `
                                         --auth pat --token $aadToken `
-                                        --pool $AgentPool `
+                                        $poolArgs `
                                         --agent $AgentName --replace `
                                         --acceptTeeEula `
                                         --work $pipelineWorkDirectory
         } else {
             Write-Debug "Running: $(Join-Path . $script) --url $OrganizationUrl --pool $AgentPool --agent $AgentName --replace --acceptTeeEula --work $pipelineWorkDirectory"
             . "$(Join-Path . $script)"  --url $OrganizationUrl `
-                                        --pool $AgentPool `
+                                        $poolArgs `
                                         --agent $AgentName --replace `
                                         --acceptTeeEula `
                                         --work $pipelineWorkDirectory
