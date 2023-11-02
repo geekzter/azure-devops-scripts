@@ -82,8 +82,6 @@ foreach ($taskJson in $taskJsonLocations) {
     $task | Format-Table | Out-String | Write-Debug
     $tasks.Add($task) | Out-Null
 }
-#                      Where-Object {($_.type -ieq 'connectedService:azurerm') -or ($_.type -ieq 'connectedService:dockerregistry') -or ($_.type -ieq 'connectedService:kubernetes')} `
-
 
 # Filter tasks
 $tasks | ForEach-Object {[PSCustomObject]$_} `
@@ -93,7 +91,7 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
                | Where-Object -Property type -ieq 'connectedService:AzureRM' `
                | Set-Variable azureRmProperty
             if ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue | `
-                     Where-Object {($_.type -ieq 'connectedService:azurerm')} `
+            Where-Object {($_.type -ieq 'connectedService:azurerm') -or ($_.type -ieq 'connectedService:dockerregistry') -or ($_.type -ieq 'connectedService:kubernetes')} `
                ) {
                 $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $true
             } else {
