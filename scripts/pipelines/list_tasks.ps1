@@ -82,6 +82,7 @@ foreach ($taskJson in $taskJsonLocations) {
     $task | Format-Table | Out-String | Write-Debug
     $tasks.Add($task) | Out-Null
 }
+#                      Where-Object {($_.type -ieq 'connectedService:azurerm') -or ($_.type -ieq 'connectedService:dockerregistry') -or ($_.type -ieq 'connectedService:kubernetes')} `
 
 
 # Filter tasks
@@ -91,7 +92,9 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
             $_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue `
                | Where-Object -Property type -ieq 'connectedService:AzureRM' `
                | Set-Variable azureRmProperty
-            if ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue | Where-Object -Property type -ieq 'connectedService:AzureRM') {
+            if ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue | `
+                     Where-Object {($_.type -ieq 'connectedService:azurerm')} `
+               ) {
                 $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $true
             } else {
                 $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $false
@@ -153,6 +156,11 @@ if ($NodeTasksOnly) {
                | Select-Object -Property Count `
                | Add-Member -MemberType NoteProperty -Name NodeProperty -Value $nodeProperty -PassThru
     }
+} else {
+    $tasks | Measure-Object `
+           | Select-Object -ExpandProperty Count `
+           | Set-Variable taskCount
+    Write-Host "${taskCount} tasks"
 }
 
 # Export results
