@@ -1,4 +1,11 @@
 #!/usr/bin/env pwsh
+# TODO:
+# - Export CSV
+# - Enumerate all projects
+# - Encode project names
+# - Support release pipelines
+# - Progress bars
+
 <# 
 .SYNOPSIS 
 
@@ -53,18 +60,17 @@ if ($Token) {
 
 $headers = @{"Content-Type"="application/json"; "Accept"="application/json"}
 $headers.Add("Authorization", $authHeader)
-$apiVersion = "7.1-preview.2"
+# $apiVersion = "7.1-preview.2"
 # $apiVersion = "7.1-preview.1"
+$apiVersion = "7.1"
+# $apiVersion = "7.2-preview.1"
 
 "{0}/_apis/distributedtask/tasks?api-version={1}" -f $OrganizationUrl, $apiVersion `
                                                   | Set-Variable -Name tasksRequestUrl
-
 Write-Debug $tasksRequestUrl
 Invoke-WebRequest -Headers $headers `
                   -Uri $tasksRequestUrl `
                   -Method Get `
-                  -Verbose `
-                  -Debug `
                   | Select-Object -ExpandProperty Content `
                   | ConvertFrom-Json -AsHashtable `
                   | Select-Object -ExpandProperty value `
@@ -81,51 +87,98 @@ Invoke-WebRequest -Headers $headers `
                   | Set-Variable -Name deprecatedTasks -Scope global
 
 $deprecatedTasks | Format-Table id, name, fullName, version | Out-String | Write-Debug
-
-
-"{0}/{1}/_apis/build/builds/{2}/timeline?api-version={3}" -f $OrganizationUrl, $Project, $BuildId, $apiVersion `
-                                                          | Set-Variable -Name timelineRequestUrl
-Write-Debug $timelineRequestUrl
-Invoke-RestMethod -Headers $headers `
-                  -Uri $timelineRequestUrl `
-                  -Method Get `
-                  -Verbose `
-                  -Debug `
-                  | Select-Object -ExpandProperty records `
-                  | Where-Object {$_.type -ieq "Task"} `
-                  | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
-                  | ForEach-Object {
-                    $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
-                    $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
-                    $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
-                    $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
-                    $_
-                  } `
-                 | Set-Variable -Name timelineRecords -Scope global
-
-$timelineRecords | Where-Object {$_.type -ieq "Task"} `
-                 | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
-                 | Select-Object -ExpandProperty task `
-                 | ForEach-Object {
-                     $_ | Add-Member -MemberType NoteProperty -Name fullName -Value ("{0}@{1}" -f $_.name, $_.version.Substring(0,1))
-                     $_
-                   } `
-                 | Sort-Object -Property name, version `
-                 | Set-Variable -Name timelineTasks -Scope global
 $deprecatedTimelineTasks = @{}
-foreach ($task in $timelineRecords) {
-    $deprecatedTask = $null
-    $deprecatedTasks | Where-Object {$_.fullName -ieq $task.taskFullName} `
-                     | Set-Variable -Name deprecatedTask
-    if ($deprecatedTask) {  
-        Write-Warning "Task $($deprecatedTask.fullName) is deprecated, please update to a newer version"
-        # $deprecatedTimelineTasks.Add($task) | Out-Null
-        "{0}/{1}/_build/results?buildId={2}&view=logs&j={3}&t={4}&api-version={5}" -f $OrganizationUrl, $Project, $BuildId, $task.parentId, $task.id, $apiVersion `
-                                                                                         | Set-Variable -Name timelineRecordUrl
-        $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
-        $task | Format-List | Out-String | Write-Debug
-        $deprecatedTimelineTasks[$task.taskFullName] = $task
-    }
-}
 
-$deprecatedTimelineTasks.Values | Format-Table name, fullName, version, runUrl
+do {
+    "{0}/{1}/_apis/pipelines?continuationToken={2}&api-version={3}&`$top=200" -f $OrganizationUrl, $Project, $pipelineContinuationToken, $apiVersion `
+                                                                              | Set-Variable -Name pipelinesRequestUrl
+
+    Write-Debug $pipelinesRequestUrl
+    Invoke-WebRequest -Headers $headers `
+                      -Uri $pipelinesRequestUrl `
+                      -Method Get `
+                      | Tee-Object -Variable pipelinesResponse `
+                      | ConvertFrom-Json `
+                      | Select-Object -ExpandProperty value `
+                      | Set-Variable pipelines
+
+    $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-pipelineContinuationToken')"
+    Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
+
+    foreach ($pipeline in $pipelines) {
+        Write-Debug "Pipeline run"
+        $pipeline | Format-List | Out-String | Write-Debug
+
+        # GET https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/runs?api-version=7.2-preview.1
+        "{0}/{1}/_apis/pipelines/{2}/runs?&api-version={4}&`$top=200" -f $OrganizationUrl, $Project, $pipeline.id, $pipelineRunContinuationToken, $apiVersion `
+                                                                                                   | Set-Variable -Name pipelineRunsRequestUrl
+
+        Write-Debug $pipelineRunsRequestUrl
+        Invoke-WebRequest -Headers $headers `
+                          -Uri $pipelineRunsRequestUrl `
+                          -Method Get `
+                          | Tee-Object -Variable pipelineRunsResponse `
+                          | ConvertFrom-Json `
+                          | Select-Object -ExpandProperty value `
+                          | Tee-Object -Variable pipelineRuns `
+                          | Select-Object -First 1 `
+                          | Set-Variable pipelineRun
+        Write-Debug "timelineResponse: ${pipelineRunsResponse}"
+
+        Write-Debug "Pipeline run:"
+        $pipelineRun | Format-List | Out-String | Write-Debug
+
+        "{0}/{1}/_apis/build/builds/{2}/timeline?api-version={3}" -f $OrganizationUrl, $Project, $pipelineRun.id, $apiVersion `
+                                                                  | Set-Variable -Name timelineRequestUrl
+        Write-Debug $timelineRequestUrl
+        Invoke-WebRequest -Headers $headers `
+                          -Uri $timelineRequestUrl `
+                          -Method Get `
+                          | Tee-Object -Variable timelineResponse `
+                          | ConvertFrom-Json `
+                          | Select-Object -ExpandProperty records `
+                          | Where-Object {$_.type -ieq "Task"} `
+                          | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
+                          | ForEach-Object {
+                              $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
+                              $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
+                              $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
+                              $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
+                              $_
+                          } `
+                          | Set-Variable -Name timelineRecords -Scope global
+        Write-Debug "timelineResponse: ${timelineResponse}"
+
+        if (!$timelineRecords) {
+            Write-Warning "No timeline records found for pipeline run $($pipelineRun.id)"
+            continue
+        }
+
+        $timelineRecords | Where-Object {$_.type -ieq "Task"} `
+                         | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
+                         | Select-Object -ExpandProperty task `
+                         | ForEach-Object {
+                            $_ | Add-Member -MemberType NoteProperty -Name fullName -Value ("{0}@{1}" -f $_.name, $_.version.Substring(0,1))
+                            $_
+                         } `
+                         | Sort-Object -Property name, version `
+                         | Set-Variable -Name timelineTasks -Scope global
+        foreach ($task in $timelineRecords) {
+            $deprecatedTask = $null
+            $deprecatedTasks | Where-Object {$_.fullName -ieq $task.taskFullName} `
+                            | Set-Variable -Name deprecatedTask
+            if ($deprecatedTask) {  
+                Write-Warning "Task $($deprecatedTask.fullName) is deprecated, please update to a newer version"
+                # $deprecatedTimelineTasks.Add($task) | Out-Null
+                "{0}/{1}/_build/results?buildId={2}&view=logs&j={3}&t={4}&api-version={5}" -f $OrganizationUrl, $Project, $BuildId, $task.parentId, $task.id, $apiVersion `
+                                                                                                | Set-Variable -Name timelineRecordUrl
+                $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
+                $task | Format-List | Out-String | Write-Debug
+                $deprecatedTimelineTasks[$task.taskFullName] = $task
+            }
+        }
+        $deprecatedTimelineTasks.Values | Format-Table name, fullName, version, runUrl | Out-String | Write-Debug                                                                                               
+    }
+} while ($pipelineContinuationToken)
+
+$deprecatedTimelineTasks.Values | Format-Table name, fullName, version, runUrl | Out-String | Write-Debug
