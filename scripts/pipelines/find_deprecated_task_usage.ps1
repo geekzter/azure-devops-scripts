@@ -34,6 +34,7 @@ param (
     # [switch]
     # $Force=$false
 ) 
+$organizationName = $OrganizationUrl.Split('/')[3]
 $OrganizationUrl = $OrganizationUrl.ToString().TrimEnd('/')
 
 if ($Token) {
@@ -188,13 +189,14 @@ try {
 } catch [System.Management.Automation.HaltCommandException] {
     Write-Warning "Skipped paging through results" 
 } finally {
-    $allDeprecatedTimelineTasks | Select-Object -Property taskId, taskName, taskFullName, taskVersion, runUrl `
-                                | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | ForEach-Object {
+                                    $_ | Add-Member -MemberType NoteProperty -Name organization -Value $organizationName
                                     $_ | Add-Member -MemberType NoteProperty -Name project -Value $Project
                                     $_ | Add-Member -MemberType NoteProperty -Name pipeline -Value $pipeline.name
                                     $_
-                                } `
-                                | Format-Table -Property project, pipeline, taskFullName, runUrl
+                                } 
+                                | Select-Object -Property organization, project, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
+                                | Export-Csv -Path $exportFilePath
+    $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
     Write-Host "`Deprecated task usage in '${OrganizationUrl}/${Project}' has been saved to ${exportFilePath}"
 }
