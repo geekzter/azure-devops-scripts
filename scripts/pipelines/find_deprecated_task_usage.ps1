@@ -105,19 +105,20 @@ Invoke-AzDORestApi $tasksRequestUrl `
                         $_
                      } `
                    | Sort-Object -Property name, version `
-                   | Set-Variable -Name deprecatedTasks -Scope global
+                   | Set-Variable -Name deprecatedTasks
 
 $deprecatedTasks | Format-Table id, name, fullName, version | Out-String | Write-Debug
 
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
 
-Write-Verbose "Retrieving projects for organization '${OrganizationUrl}'..."
 if ($Project) {
     $projectNames = @($Project)
 } else {
+    [System.Collections.ArrayList]$projectNames = @()
     do {
         "{0}/_apis/projects?`$top=200&continuationToken={1}&api-version={2}" -f $OrganizationUrl, $projectContinuationToken, $apiVersion `
                                                                              | Set-Variable -Name projectsRequestUrl
+        Write-Verbose "Retrieving projects for organization '${OrganizationUrl}'..."
         Write-Debug $projectsRequestUrl
         Invoke-AzDORestApi $projectsRequestUrl `
                            | Tee-Object -Variable projectsResponse `
@@ -125,7 +126,9 @@ if ($Project) {
                            | Select-Object -ExpandProperty value `
                            | Select-Object -ExpandProperty name `
                            | Sort-Object `
-                           | Set-Variable projectNames
+                           | Set-Variable projectNamesBatch
+
+        $projectNames.AddRange($projectNamesBatch)
 
         $projectContinuationToken = "$($projectsResponse.Headers.'X-MS-ContinuationToken')"
     } while ($projectContinuationToken)
@@ -139,8 +142,8 @@ try {
         $projectLoopProgressParameters = @{
             ID               = 0
             Activity         = "Processing projects"
-            Status           = "${projectName} (${projectIndex} of $($projectNames.Length))"
-            PercentComplete  =  ($projectIndex / $($projectNames.Length)) * 100
+            Status           = "${projectName} (${projectIndex} of $($projectNames.Count))"
+            PercentComplete  =  ($projectIndex / $($projectNames.Count)) * 100
             CurrentOperation = 'ProjectLoop'
         }
         Write-Progress @projectLoopProgressParameters
@@ -172,8 +175,8 @@ try {
                 $pipelineLoopProgressParameters = @{
                     ID               = 1
                     Activity         = "Processing pipelines in '${projectName}'"
-                    Status           = "${pipelineFullName} (${pipelineIndex} of $($pipelines.Length))"
-                    PercentComplete  =  ($pipelineIndex / $($pipelines.Length)) * 100
+                    Status           = "${pipelineFullName} (${pipelineIndex} of $($pipelines.Count))"
+                    PercentComplete  =  ($pipelineIndex / $($pipelines.Count)) * 100
                     CurrentOperation = 'PipelineLoop'
                 }
                 Write-Progress @pipelineLoopProgressParameters
