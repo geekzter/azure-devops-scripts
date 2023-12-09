@@ -167,11 +167,12 @@ try {
         
             $pipelineIndex = 0
             foreach ($pipeline in $pipelines) {
+                $pipelineFullName = ("$($pipeline.folder)\$($pipeline.name)" -replace "[\\]+","\")
                 $pipelineIndex++
                 $pipelineLoopProgressParameters = @{
                     ID               = 1
                     Activity         = "Processing pipelines in '${projectName}'"
-                    Status           = "$($pipeline.name) (${pipelineIndex} of $($pipelines.Length))"
+                    Status           = "${pipelineFullName} (${pipelineIndex} of $($pipelines.Length))"
                     PercentComplete  =  ($pipelineIndex / $($pipelines.Length)) * 100
                     CurrentOperation = 'PipelineLoop'
                 }
@@ -239,9 +240,10 @@ try {
                         "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}&api-version={4}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id, $apiVersion `
                                                                                                | Set-Variable -Name timelineRecordUrl
                         
-                        $task | Add-Member -MemberType NoteProperty -Name folder -Value $pipeline.folder
                         $task | Add-Member -MemberType NoteProperty -Name organization -Value $organizationName
-                        $task | Add-Member -MemberType NoteProperty -Name pipeline -Value $pipeline.name
+                        $task | Add-Member -MemberType NoteProperty -Name pipelineFolder -Value $pipeline.folder
+                        $task | Add-Member -MemberType NoteProperty -Name pipelineFullName -Value $pipelineFullName
+                        $task | Add-Member -MemberType NoteProperty -Name pipelineName -Value $pipeline.name
                         $task | Add-Member -MemberType NoteProperty -Name project -Value $projectName
                         $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
                         $task | Format-List | Out-String | Write-Debug
@@ -265,7 +267,7 @@ try {
         $exportFilePrefix = "${OrganizationName}"
     }
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
-    $allDeprecatedTimelineTasks | Select-Object -Property organization, project, folder, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
+    $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipelineFolder, pipelineFullName, pipelineName, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
     Write-Host "`Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
