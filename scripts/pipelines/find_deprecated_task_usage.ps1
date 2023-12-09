@@ -258,7 +258,12 @@ try {
 } catch [System.Management.Automation.HaltCommandException] {
     Write-Warning "Skipped paging through results" 
 } finally {
-    $exportFilePath = (Join-Path $ExportDirectory "$([guid]::newguid().ToString()).csv")
+    if ($Project) {
+        $exportFilePrefix = "${OrganizationName}-${Project}"
+    } else {
+        $exportFileName = "${OrganizationName}"
+    }
+    $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, folder, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
