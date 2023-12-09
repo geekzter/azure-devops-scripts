@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # TODO:
 # - Support release pipelines
-# - Show progress over total # of pipelines
+# - Show progress over total # of pipelines by retrieving all pipelines first
 # - Description & examples
 
 <# 
