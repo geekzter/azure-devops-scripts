@@ -1,8 +1,7 @@
 #!/usr/bin/env pwsh
 # TODO:
-# - Progress bars
 # - Support release pipelines
-# _ Run from pipeline
+# - Run from pipeline
 
 <# 
 .SYNOPSIS 
@@ -109,7 +108,6 @@ Invoke-AzDORestApi $tasksRequestUrl `
 $deprecatedTasks | Format-Table id, name, fullName, version | Out-String | Write-Debug
 
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
-$exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
 
 Write-Verbose "Retrieving projects for organization '${OrganizationUrl}'..."
 if ($Project) {
@@ -133,16 +131,29 @@ if ($Project) {
 
 # Try finally block to anticipate cancelation or timeout errors
 try {
+    $projectIndex = 0
     foreach ($projectName in $projectNames) {
+        $projectIndex++
+        $projectLoopProgressParameters = @{
+            ID               = 0
+            Activity         = "Processing projects"
+            Status           = "${projectName} (${projectIndex} of $($projectNames.Length))"
+            PercentComplete  =  ($projectIndex / $($projectNames.Length)) * 100
+            CurrentOperation = 'ProjectLoop'
+        }
+        Write-Progress @projectLoopProgressParameters
+
+
         $projectUrl = "{0}/{1}" -f $OrganizationUrl, [uri]::EscapeUriString($projectName)
-        Write-Verbose "Retrieving pipelines for project '${projectUrl}'..."
         $pipelineContinuationToken = $null
 
         do {
             "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=200" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
                                                                                   | Set-Variable -Name pipelinesRequestUrl
         
+            Write-Verbose "Retrieving pipelines for project '${projectUrl}'..."
             Write-Debug $pipelinesRequestUrl
+            $pipelines = $null
             Invoke-AzDORestApi $pipelinesRequestUrl `
                                | Tee-Object -Variable pipelinesResponse `
                                | ConvertFrom-Json `
@@ -152,7 +163,19 @@ try {
             $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-ContinuationToken')"
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
         
+            $pipelineIndex = 0
             foreach ($pipeline in $pipelines) {
+                $pipelineIndex++
+                $pipelineLoopProgressParameters = @{
+                    ID               = 1
+                    Activity         = "Processing pipelines in '${projectName}'"
+                    Status           = "$($pipeline.name) (${pipelineIndex} of $($pipelines.Length))"
+                    PercentComplete  =  ($pipelineIndex / $($pipelines.Length)) * 100
+                    CurrentOperation = 'PipelineLoop'
+                }
+                Write-Progress @pipelineLoopProgressParameters
+        
+
                 Write-Debug "Pipeline run"
                 $pipeline | Format-List | Out-String | Write-Debug
         
@@ -235,10 +258,13 @@ try {
                 $deprecatedTimelineTasks.Values | Format-Table name, fullName, version, runUrl | Out-String | Write-Debug                                                                                               
             }
         } while ($pipelineContinuationToken)
+        Write-Progress Id 1 -Completed    
     }
+    Write-Progress Id 0 -Completed
 } catch [System.Management.Automation.HaltCommandException] {
     Write-Warning "Skipped paging through results" 
 } finally {
+    $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
