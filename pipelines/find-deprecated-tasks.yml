@@ -33,7 +33,7 @@ jobs:
 
   steps:
   - pwsh: |
-      ./find-deprecated-tasks.ps1 -Token $(System.AccessToken) -ExportDirectory $(Build.ArtifactStagingDirectory)
+      ./find_deprecated_task_usage.ps1 -Token $(System.AccessToken) -ExportDirectory $(Build.ArtifactStagingDirectory)
     displayName: 'Find deprecated tasks'
     workingDirectory: $(scriptDirectory)
 
