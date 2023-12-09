@@ -1,0 +1,38 @@
+pr:
+  autoCancel: false
+  branches:
+    include:
+    - '*'
+  drafts: false
+  paths:
+    exclude:
+    - '.devcontainer/**'  
+    - 'visuals/**'  
+    - '*.md'  
+schedules:
+- cron: '0 0 * * Tue,Fr'
+  displayName: 'Bi-weekly build (UTC)'
+  # Run if there are no changes
+  always: 'true'
+  branches:
+    include:
+    - main
+trigger: none
+
+variables:
+- name: scriptDirectory
+  value: $(Build.SourcesDirectory)/scripts/pipelines
+
+jobs:
+- job: retrievalScripts
+  displayName: 'Deprecated tasks'
+
+  pool:
+    name: 'Azure Pipelines'
+    vmImage: ubuntu-latest
+
+  steps:
+  - pwsh: |
+      ./find-deprecated-tasks.ps1 -Token $(System.AccessToken)
+    displayName: 'Find deprecated tasks'
+    workingDirectory: '$(scriptDirectory)'
