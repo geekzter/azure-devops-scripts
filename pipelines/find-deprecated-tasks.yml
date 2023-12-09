@@ -33,10 +33,11 @@ jobs:
 
   steps:
   - pwsh: |
-      Get-ChildItem -Path Env: -Recurse -Include * | Sort-Object -Property Name
-      ./find_deprecated_task_usage.ps1 -Token $(System.AccessToken) -ExportDirectory $(Build.ArtifactStagingDirectory)
+      ./find_deprecated_task_usage.ps1
     displayName: 'Find deprecated tasks in project'
     workingDirectory: $(scriptDirectory)
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   - publish: $(Build.ArtifactStagingDirectory)
     displayName: 'Publish CSV files'

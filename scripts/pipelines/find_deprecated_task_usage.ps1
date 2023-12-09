@@ -26,7 +26,7 @@ param (
     $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN),
 
     [string]
-    $ExportDirectory=[System.IO.Path]::GetTempPath()
+    $ExportDirectory=($env:BUILD_ARTIFACTSTAGINGDIRECTORY ?? [System.IO.Path]::GetTempPath())
 ) 
 function Invoke-AzDORestApi (
     [parameter(Mandatory=$true)]
