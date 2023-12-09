@@ -79,8 +79,6 @@ function Invoke-AzDORestApi (
 $apiVersion = "7.1"
 # $apiVersion = "7.2-preview.1"
 
-
-
 $organizationName = $OrganizationUrl.Split('/')[3]
 $OrganizationUrl = $OrganizationUrl.ToString().TrimEnd('/')
 
@@ -156,12 +154,10 @@ try {
             $pipelines = $null
             Invoke-AzDORestApi $pipelinesRequestUrl `
                                | Tee-Object -Variable pipelinesResponse `
-                               | Select-Object -ExpandProperty Content `
                                | ConvertFrom-Json `
-                               | Tee-Object -Variable pipelinesResponseContent `
                                | Select-Object -ExpandProperty value `
                                | Set-Variable pipelines
-
+        
             $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-ContinuationToken')"
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
         
@@ -171,7 +167,7 @@ try {
                 $pipelineLoopProgressParameters = @{
                     ID               = 1
                     Activity         = "Processing pipelines in '${projectName}'"
-                    Status           = "$($pipeline.name) (${pipelineIndex} of $($pipelinesResponseContent.count))"
+                    Status           = "$($pipeline.name) (${pipelineIndex} of $($pipelines.Length))"
                     PercentComplete  =  ($pipelineIndex / $($pipelines.Length)) * 100
                     CurrentOperation = 'PipelineLoop'
                 }
@@ -187,6 +183,7 @@ try {
         
                 Write-Debug $pipelineRunsRequestUrl
                 Invoke-AzDORestApi $pipelineRunsRequestUrl `
+                                   | Select-Object -ExpandProperty value `
                                    | Tee-Object -Variable pipelineRunsResponse `
                                    | ConvertFrom-Json `
                                    | Select-Object -ExpandProperty value `
@@ -214,30 +211,20 @@ try {
                                    | Where-Object {$_.type -ieq "Task"} `
                                    | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
                                    | ForEach-Object {
-                                        $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
-                                        $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
-                                        $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
-                                        $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
-                                        $_
+                                      $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
+                                      $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
+                                      $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
+                                      $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
+                                      $_
                                     } `
-                                   | Set-Variable -Name timelineRecords -Scope global
+                                   | Set-Variable -Name timelineRecords
                 Write-Debug "timelineResponse: ${timelineResponse}"
         
                 if (!$timelineRecords) {
                     Write-Warning "No timeline records found for pipeline run $($pipelineRun.id)"
                     continue
                 }
-        
-                $timelineRecords | Where-Object {$_.type -ieq "Task"} `
-                                 | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
-                                 | Select-Object -ExpandProperty task `
-                                 | ForEach-Object {
-                                    $_ | Add-Member -MemberType NoteProperty -Name fullName -Value ("{0}@{1}" -f $_.name, $_.version.Substring(0,1))
-                                    $_
-                                 } `
-                                 | Sort-Object -Property name, version `
-                                 | Set-Variable -Name timelineTasks -Scope global
-    
+
                 $deprecatedTimelineTasks = @{}
                 foreach ($task in $timelineRecords) {
                     $deprecatedTask = $null
@@ -248,8 +235,8 @@ try {
                         # $deprecatedTimelineTasks.Add($task) | Out-Null
                         "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}&api-version={4}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id, $apiVersion `
                                                                                                | Set-Variable -Name timelineRecordUrl
-
-                        $task | Add-Member -MemberType NoteProperty -Name folder -Value $pipelines.folder
+                        
+                        $task | Add-Member -MemberType NoteProperty -Name folder -Value $pipeline.folder
                         $task | Add-Member -MemberType NoteProperty -Name organization -Value $organizationName
                         $task | Add-Member -MemberType NoteProperty -Name pipeline -Value $pipeline.name
                         $task | Add-Member -MemberType NoteProperty -Name project -Value $projectName
@@ -270,7 +257,7 @@ try {
     Write-Warning "Skipped paging through results" 
 } finally {
     $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
-    $allDeprecatedTimelineTasks | Select-Object -Property organization, project, folder, pipeline, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
+    $allDeprecatedTimelineTasks | Select-Object -Property organization, project, folder, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
     Write-Host "`Deprecated task usage in '${OrganizationUrl}/${Project}' has been saved to ${exportFilePath}"
