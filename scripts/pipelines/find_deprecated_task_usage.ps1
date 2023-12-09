@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 # TODO:
-# - Export CSV
 # - Enumerate all projects
 # - Encode project names
 # - Support release pipelines
 # - Progress bars
+# _ Run from pipeline
 
 <# 
 .SYNOPSIS 
@@ -27,63 +27,90 @@ param (
     
     [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'Agent Pools' scope",ParameterSetName="pool")]
     [string]
-    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN)
+    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN)
     
 
     # [parameter(Mandatory=$false,HelpMessage="Do not ask for input to start processing",ParameterSetName="pool")]
     # [switch]
     # $Force=$false
 ) 
-$organizationName = $OrganizationUrl.Split('/')[3]
-$OrganizationUrl = $OrganizationUrl.ToString().TrimEnd('/')
+function Invoke-AzDORestApi (
+    [parameter(Mandatory=$true)]
+    [string]
+    $Url,
 
-if ($Token) {
-    Write-Debug "Using token from parameter"
-    $base64AuthInfo = [Convert]::ToBase64String([System.Text.ASCIIEncoding]::ASCII.GetBytes(":${Token}"))
-    $authHeader = "Basic ${base64AuthInfo}"
-} else {
-    if (!(Get-Command az)) {
-        Write-Error "Azure CLI is not installed, get it at http://aka.ms/azure-cli"
-        exit 1
+    [parameter(Mandatory=$false)]
+    [string]
+    $Method="Get"
+) {
+    $aadTokenExpired = ($script:aadTokenExpiresOn -and ($script:aadTokenExpiresOn -le [DateTime]::Now))
+    if (!$script:headers -or $aadTokenExpired) {
+        if ($Token) {
+            Write-Debug "Using token from parameter"
+            $base64AuthInfo = [Convert]::ToBase64String([System.Text.ASCIIEncoding]::ASCII.GetBytes(":${Token}"))
+            $authHeader = "Basic ${base64AuthInfo}"
+        } else {
+            if (!(Get-Command az)) {
+                Write-Error "Azure CLI is not installed, get it at http://aka.ms/azure-cli"
+                exit 1
+            }
+            if (!$script:aadTokenExpiresOn -or $aadTokenExpired) {
+                if (!(az account show 2>$null)) {
+                    az login --allow-no-subscriptions
+                }
+                az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
+                                            -o json `
+                                             | ConvertFrom-Json `
+                                            | Set-Variable aadTokenResponse
+                $authHeader = "Bearer $($aadTokenResponse.accessToken)"
+                $script:aadTokenExpiresOn = [DateTime]::Parse($token.expiresOn)    
+            }
+        }
+        
+        $script:headers = @{"Content-Type"="application/json"; "Accept"="application/json"}
+        $script:headers.Add("Authorization", $authHeader)
     }
-    if (!(az account show 2>$null)) {
-        az login --allow-no-subscriptions
-    }
-    az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
-                                -o tsv `
-                                --query accessToken `
-                                | Set-Variable aadToken
-    $authHeader = "Bearer ${aadToken}"    
+
+    Write-Debug "Api request: ${Url}"
+    Invoke-WebRequest -Headers $script:headers `
+                      -Uri $Url `
+                      -Method $Method `
+                      | Set-Variable -Name apiResponse
+
+    Write-Debug "Api response: ${Url}"
+    $apiResponse | Format-List | Out-String | Write-Debug
+    return $apiResponse
 }
-
-$headers = @{"Content-Type"="application/json"; "Accept"="application/json"}
-$headers.Add("Authorization", $authHeader)
 # $apiVersion = "7.1-preview.2"
 # $apiVersion = "7.1-preview.1"
 $apiVersion = "7.1"
 # $apiVersion = "7.2-preview.1"
 
+
+
+$organizationName = $OrganizationUrl.Split('/')[3]
+$OrganizationUrl = $OrganizationUrl.ToString().TrimEnd('/')
+
+
 "{0}/_apis/distributedtask/tasks?api-version={1}" -f $OrganizationUrl, $apiVersion `
                                                   | Set-Variable -Name tasksRequestUrl
 
 Write-Debug $tasksRequestUrl
-Invoke-WebRequest -Headers $headers `
-                  -Uri $tasksRequestUrl `
-                  -Method Get `
-                  | Select-Object -ExpandProperty Content `
-                  | ConvertFrom-Json -AsHashtable `
-                  | Select-Object -ExpandProperty value `
-                  | ForEach-Object {[PSCustomObject]$_} `
-                  | Where-Object {$_.deprecated -ieq 'true'}
-                  | ForEach-Object {
+Invoke-AzDORestApi $tasksRequestUrl `
+                   | Select-Object -ExpandProperty Content `
+                   | ConvertFrom-Json -AsHashtable `
+                   | Select-Object -ExpandProperty value `
+                   | ForEach-Object {[PSCustomObject]$_} `
+                   | Where-Object {$_.deprecated -ieq 'true'}
+                   | ForEach-Object {
                         $_ | Add-Member -MemberType NoteProperty -Name majorVersion -Value $_.version.major
                         $_ | Add-Member -MemberType NoteProperty -Name fullName -Value ("{0}@{1}" -f $_.name, $_.version.major)
                         $_ | Add-Member -MemberType NoteProperty -Name FullVersion -Value (New-Object -TypeName System.Version -ArgumentList $_.version.major, $_.version.minor, $_.version.patch)
                         $_.version = $_.FullVersion.ToString(3)
                         $_
-                    } `
-                  | Sort-Object -Property name, version `
-                  | Set-Variable -Name deprecatedTasks -Scope global
+                     } `
+                   | Sort-Object -Property name, version `
+                   | Set-Variable -Name deprecatedTasks -Scope global
 
 $deprecatedTasks | Format-Table id, name, fullName, version | Out-String | Write-Debug
 
@@ -96,13 +123,11 @@ try {
                                                                                   | Set-Variable -Name pipelinesRequestUrl
     
         Write-Debug $pipelinesRequestUrl
-        Invoke-WebRequest -Headers $headers `
-                          -Uri $pipelinesRequestUrl `
-                          -Method Get `
-                          | Tee-Object -Variable pipelinesResponse `
-                          | ConvertFrom-Json `
-                          | Select-Object -ExpandProperty value `
-                          | Set-Variable pipelines
+        Invoke-AzDORestApi $pipelinesRequestUrl `
+                           | Tee-Object -Variable pipelinesResponse `
+                           | ConvertFrom-Json `
+                           | Select-Object -ExpandProperty value `
+                           | Set-Variable pipelines
     
         $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-pipelineContinuationToken')"
         Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
@@ -116,15 +141,13 @@ try {
                                                                                                        | Set-Variable -Name pipelineRunsRequestUrl
     
             Write-Debug $pipelineRunsRequestUrl
-            Invoke-WebRequest -Headers $headers `
-                              -Uri $pipelineRunsRequestUrl `
-                              -Method Get `
-                              | Tee-Object -Variable pipelineRunsResponse `
-                              | ConvertFrom-Json `
-                              | Select-Object -ExpandProperty value `
-                              | Tee-Object -Variable pipelineRuns `
-                              | Select-Object -First 1 `
-                              | Set-Variable pipelineRun
+            Invoke-AzDORestApi $pipelineRunsRequestUrl `
+                               | Tee-Object -Variable pipelineRunsResponse `
+                               | ConvertFrom-Json `
+                               | Select-Object -ExpandProperty value `
+                               | Tee-Object -Variable pipelineRuns `
+                               | Select-Object -First 1 `
+                               | Set-Variable pipelineRun
             Write-Debug "timelineResponse: ${pipelineRunsResponse}"
     
             Write-Debug "Pipeline run:"
@@ -133,22 +156,20 @@ try {
             "{0}/{1}/_apis/build/builds/{2}/timeline?api-version={3}" -f $OrganizationUrl, $Project, $pipelineRun.id, $apiVersion `
                                                                       | Set-Variable -Name timelineRequestUrl
             Write-Debug $timelineRequestUrl
-            Invoke-WebRequest -Headers $headers `
-                              -Uri $timelineRequestUrl `
-                              -Method Get `
-                              | Tee-Object -Variable timelineResponse `
-                              | ConvertFrom-Json `
-                              | Select-Object -ExpandProperty records `
-                              | Where-Object {$_.type -ieq "Task"} `
-                              | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
-                              | ForEach-Object {
+            Invoke-AzDORestApi $timelineRequestUrl `
+                               | Tee-Object -Variable timelineResponse `
+                               | ConvertFrom-Json `
+                               | Select-Object -ExpandProperty records `
+                               | Where-Object {$_.type -ieq "Task"} `
+                               | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
+                               | ForEach-Object {
                                   $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
                                   $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
                                   $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
                                   $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
                                   $_
-                              } `
-                              | Set-Variable -Name timelineRecords -Scope global
+                                } `
+                               | Set-Variable -Name timelineRecords -Scope global
             Write-Debug "timelineResponse: ${timelineResponse}"
     
             if (!$timelineRecords) {
