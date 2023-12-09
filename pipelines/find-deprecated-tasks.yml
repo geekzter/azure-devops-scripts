@@ -33,7 +33,7 @@ jobs:
 
   steps:
   - pwsh: |
-      ./find_deprecated_task_usage.ps1
+      ./find_deprecated_task_usage.ps1 -Project $null
     displayName: 'Find deprecated tasks in project'
     workingDirectory: $(scriptDirectory)
     env:
