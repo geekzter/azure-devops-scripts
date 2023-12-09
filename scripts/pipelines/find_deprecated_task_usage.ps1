@@ -21,7 +21,7 @@ param (
     $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI),
     
     [string]
-    $Project=($env:AZDO_PROJECT),
+    $Project=$env:AZDO_PROJECT,
     
     [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'Agent Pools' scope",ParameterSetName="pool")]
     [string]
