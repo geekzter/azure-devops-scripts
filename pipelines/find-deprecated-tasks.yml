@@ -33,6 +33,10 @@ jobs:
 
   steps:
   - pwsh: |
-      ./find-deprecated-tasks.ps1 -Token $(System.AccessToken)
+      ./find-deprecated-tasks.ps1 -Token $(System.AccessToken) -ExportDirectory $(Build.ArtifactStagingDirectory)
     displayName: 'Find deprecated tasks'
-    workingDirectory: '$(scriptDirectory)'
+    workingDirectory: $(scriptDirectory)
+
+  - publish: $(Build.ArtifactStagingDirectory)
+    displayName: 'Publish CSV files'
+    artifact: DeprecatedTasks-$(System.PlanId)-$(System.JobId)

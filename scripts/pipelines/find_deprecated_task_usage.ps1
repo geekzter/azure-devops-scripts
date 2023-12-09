@@ -23,7 +23,10 @@ param (
     
     [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'Agent Pools' scope",ParameterSetName="pool")]
     [string]
-    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN)
+    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN),
+
+    [string]
+    $ExportDirectory=[System.IO.Path]::GetTempPath()
 ) 
 function Invoke-AzDORestApi (
     [parameter(Mandatory=$true)]
@@ -183,7 +186,6 @@ try {
         
                 Write-Debug $pipelineRunsRequestUrl
                 Invoke-AzDORestApi $pipelineRunsRequestUrl `
-                                   | Select-Object -ExpandProperty value `
                                    | Tee-Object -Variable pipelineRunsResponse `
                                    | ConvertFrom-Json `
                                    | Select-Object -ExpandProperty value `
@@ -256,7 +258,7 @@ try {
 } catch [System.Management.Automation.HaltCommandException] {
     Write-Warning "Skipped paging through results" 
 } finally {
-    $exportFilePath = (Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::newguid().ToString()).csv")
+    $exportFilePath = (Join-Path $ExportDirectory "$([guid]::newguid().ToString()).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, folder, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
