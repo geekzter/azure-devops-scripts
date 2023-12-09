@@ -23,7 +23,7 @@ param (
     [string]
     $Project=$env:AZDO_PROJECT,
     
-    [parameter(Mandatory=$false,HelpMessage="PAT token with read access on 'Agent Pools' scope",ParameterSetName="pool")]
+    [parameter(Mandatory=$false,HelpMessage="PAT token with Build, Environment, Release scopes")]
     [string]
     $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN),
 
