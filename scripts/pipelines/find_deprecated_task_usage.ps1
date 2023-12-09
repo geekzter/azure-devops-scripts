@@ -2,6 +2,7 @@
 # TODO:
 # - Support release pipelines
 # - Run from pipeline
+# - Show progress over total # of pipelines
 
 <# 
 .SYNOPSIS 
@@ -261,11 +262,11 @@ try {
     if ($Project) {
         $exportFilePrefix = "${OrganizationName}-${Project}"
     } else {
-        $exportFileName = "${OrganizationName}"
+        $exportFilePrefix = "${OrganizationName}"
     }
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, folder, pipeline, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
-    Write-Host "`Deprecated task usage in '${OrganizationUrl}/${Project}' has been saved to ${exportFilePath}"
+    Write-Host "`Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
 }
