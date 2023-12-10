@@ -75,7 +75,7 @@ function Invoke-AzDORestApi (
                 az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 `
                                             -o json `
                                              | ConvertFrom-Json `
-                                            | Set-Variable aadTokenResponse
+                                             | Set-Variable aadTokenResponse
                 $authHeader = "Bearer $($aadTokenResponse.accessToken)"
                 $script:aadTokenExpiresOn = [DateTime]::Parse($aadTokenResponse.expiresOn)    
             }
@@ -115,8 +115,6 @@ if ($env:SYSTEM_DEBUG -eq "true") {
     $VerbosePreference = "Continue"
     $DebugPreference = "Continue"
 
-    # Set-PSDebug -Trace 1
-    
     Get-ChildItem -Path Env: -Force -Recurse -Include * | Sort-Object -Property Name | Format-Table -AutoSize | Out-String
 }
 $apiVersion = "7.1"
@@ -155,6 +153,7 @@ if ($ListTasksOnly) {
     exit 0
 }
 
+# Create list of projects to process
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
 if ($Project) {
     $projectNames = @($Project)
@@ -164,7 +163,7 @@ if ($Project) {
         "{0}/_apis/projects?`$top=200&continuationToken={1}&api-version={2}" -f $OrganizationUrl, $projectContinuationToken, $apiVersion `
                                                                              | Set-Variable -Name projectsRequestUrl
         Write-ProgressMessage "Retrieving projects for organization '${OrganizationUrl}'..."
-        Write-Debug $projectsRequestUrl
+        $projectNamesBatch = $null
         Invoke-AzDORestApi $projectsRequestUrl `
                            | Tee-Object -Variable projectsResponse `
                            | ConvertFrom-Json `
@@ -205,12 +204,11 @@ try {
         [System.Collections.ArrayList]$pipelines = @()
         do {
             # BUG: Continuation token is not working when the same pipeline name exists in more than <top> folders
-            # BUG: orderBy is not working, $orderBy is for 'name asc' and 'name desc'
+            # BUG: orderBy is not working, $orderBy is
             # BUG: $orderBy does not order on 'folder asc'
             "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=1000" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
                                                                                    | Set-Variable -Name pipelinesRequestUrl
         
-            Write-Debug $pipelinesRequestUrl
             $pipelinesBatch = $null
             Invoke-AzDORestApi $pipelinesRequestUrl `
                                | Tee-Object -Variable pipelinesResponse `
@@ -248,7 +246,7 @@ try {
             "{0}/_apis/pipelines/{1}/runs?&api-version={2}&`$top=200" -f $projectUrl, $pipeline.id, $apiVersion `
                                                                         | Set-Variable -Name pipelineRunsRequestUrl
     
-            Write-Debug $pipelineRunsRequestUrl
+            $pipelineRun = $null
             Invoke-AzDORestApi $pipelineRunsRequestUrl `
                                 | Tee-Object -Variable pipelineRunsResponse `
                                 | ConvertFrom-Json `
@@ -256,7 +254,6 @@ try {
                                 | Tee-Object -Variable pipelineRuns `
                                 | Select-Object -First 1 `
                                 | Set-Variable pipelineRun
-            Write-Debug "timelineResponse: ${pipelineRunsResponse}"
     
             Write-Debug "Pipeline run:"
             $pipelineRun | Format-List | Out-String | Write-Debug
@@ -267,8 +264,7 @@ try {
             }
     
             "{0}/_apis/build/builds/{1}/timeline?api-version={2}" -f $projectUrl, $pipelineRun.id, $apiVersion `
-                                                                    | Set-Variable -Name timelineRequestUrl
-            Write-Debug $timelineRequestUrl
+                                                                   | Set-Variable -Name timelineRequestUrl
             $timelineRecords = $null
             Invoke-AzDORestApi $timelineRequestUrl `
                                 | Tee-Object -Variable timelineResponse `
@@ -284,7 +280,6 @@ try {
                                     $_
                                 } `
                                 | Set-Variable -Name timelineRecords
-            Write-Debug "timelineResponse: ${timelineResponse}"
     
             if (!$timelineRecords) {
                 Write-Verbose "No timeline records found for pipeline '${pipelineFullName}' run $($pipelineRun.id)"
@@ -297,10 +292,8 @@ try {
                 $deprecatedTasks | Where-Object {$_.fullName -ieq $task.taskFullName} `
                                     | Set-Variable -Name deprecatedTask
                 if ($deprecatedTask) {  
-                    # Write-Warning "Task $($deprecatedTask.fullName) is deprecated, please update to a newer version"
-                    # $deprecatedTimelineTasks.Add($task) | Out-Null
-                    "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}&api-version={4}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id, $apiVersion `
-                                                                                            | Set-Variable -Name timelineRecordUrl
+                    "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id `
+                                                                           | Set-Variable -Name timelineRecordUrl
                     if ($StreamResults) {
                         $timelineRecordUrl | Out-String -Width 200 | Write-Host
                     } else {
@@ -314,6 +307,7 @@ try {
                     $task | Add-Member -MemberType NoteProperty -Name project -Value $projectName
                     $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
                     $task | Format-List | Out-String | Write-Debug
+
                     # Use Hastable to track unique tasks per pipeline only
                     $deprecatedTimelineTasks[$task.taskFullName] = $task
                 }
@@ -356,4 +350,7 @@ try {
                                 | Out-String -Width 256
 
     Write-Host "Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
+
+    $global:foo = $allDeprecatedTimelineTasks 
+
 }
