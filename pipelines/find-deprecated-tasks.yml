@@ -1,3 +1,9 @@
+parameters:
+- name: variableGroup
+  displayName: Variable group with AZDO_* variables
+  type: string
+  default: ''
+  
 pr:
   autoCancel: false
   branches:
@@ -20,7 +26,8 @@ schedules:
 trigger: none
 
 variables:
-- group: deprecated-tasks # can override AZDO_ORG_SERVICE_URL, AZDO_PROJECT, AZDO_PERSONAL_ACCESS_TOKEN
+- ${{ if parameters.variableGroup }}:
+  - group: ${{ ne(parameters.variableGroup,'') }} # can override AZDO_ORG_SERVICE_URL, AZDO_PROJECT, AZDO_PERSONAL_ACCESS_TOKEN
 - name: scriptDirectory
   value: $(Build.SourcesDirectory)/scripts/pipelines
 
