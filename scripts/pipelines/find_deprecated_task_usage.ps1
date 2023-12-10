@@ -1,7 +1,6 @@
 #!/usr/bin/env pwsh
 # TODO:
 # - Show progress over total # of pipelines by retrieving all pipelines first
-# - Fix hyperlinks in Pipeline logs
 # - Support release pipelines
 # - Description & examples
 
@@ -32,7 +31,7 @@ param (
 
     [parameter(Mandatory=$false,HelpMessage="Show pipeline runs that use deprecated tasks as the script runs")]
     [switch]
-    $StreamResults=($env:AGENT_ID -ne $null)
+    $StreamResults=($env:TF_BUILD -ieq 'true')
 ) 
 function Invoke-AzDORestApi (
     [parameter(Mandatory=$true)]
