@@ -34,7 +34,6 @@ jobs:
 
   steps:
   - pwsh: |
-      Get-ChildItem -Path Env: -Recurse -Include * | Sort-Object -Property Name
       ./find_deprecated_task_usage.ps1
     displayName: 'Find deprecated tasks in $(System.TeamProject)'
     workingDirectory: $(scriptDirectory)
@@ -42,5 +41,5 @@ jobs:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   - publish: $(Build.ArtifactStagingDirectory)
-    displayName: 'Publish CSV files'
+    displayName: 'Publish CSV file(s)'
     artifact: DeprecatedTasks-$(System.PlanId)-$(System.JobId)
