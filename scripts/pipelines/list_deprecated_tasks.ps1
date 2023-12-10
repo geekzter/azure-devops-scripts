@@ -316,7 +316,7 @@ try {
                                 | Export-Csv -Path $exportFilePath
 
     Write-Host "`nDeprecated task usage in '${OrganizationUrl}':"
-    $allDeprecatedTimelineTasks | Format-Table -Property @{ Name='task'; Expression = 'taskFullName'; Width = 200 }, `
+    $allDeprecatedTimelineTasks | Format-Table -Property @{ Name='task'; Expression = 'taskFullName'; Width = 40 }, `
                                                          @{ Name='pipeline'; Expression = 'runUrl'; Width = 200 } `
                                 | Out-String -Width 256
 
