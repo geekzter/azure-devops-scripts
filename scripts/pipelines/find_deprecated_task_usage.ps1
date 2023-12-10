@@ -118,8 +118,8 @@ Invoke-AzDORestApi $tasksRequestUrl `
                    | Sort-Object -Property name, version `
                    | Set-Variable -Name deprecatedTasks
 
-Write-Host "The following tasks available in ${OrganizationUrl} are marked as deprecated:"
-$deprecatedTasks | Format-Table fullName, id, version
+Write-Host "The following tasks available in organization '${OrganizationUrl}' are marked as deprecated:"
+$deprecatedTasks | Format-Table -AutoSize -Property fullName, id, version
 
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
 if ($Project) {
@@ -129,7 +129,7 @@ if ($Project) {
     do {
         "{0}/_apis/projects?`$top=200&continuationToken={1}&api-version={2}" -f $OrganizationUrl, $projectContinuationToken, $apiVersion `
                                                                              | Set-Variable -Name projectsRequestUrl
-        Write-Verbose "Retrieving projects for organization '${OrganizationUrl}'..."
+        Write-Host "Retrieving projects for organization '${OrganizationUrl}'..."
         Write-Debug $projectsRequestUrl
         Invoke-AzDORestApi $projectsRequestUrl `
                            | Tee-Object -Variable projectsResponse `
@@ -167,7 +167,7 @@ try {
         $projectUrl = "{0}/{1}" -f $OrganizationUrl, [uri]::EscapeUriString($projectName)
         $pipelineContinuationToken = $null
 
-        Write-Debug "Retrieving pipelines for project '${projectName}'..."
+        Write-Host "Retrieving pipelines for project '${projectName}'..."
         [System.Collections.ArrayList]$pipelines = @()
         do {
             # BUG: Continuation token is not working when the same pipeline name exists in more than <top> folders
@@ -195,7 +195,7 @@ try {
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
         } while ($pipelineContinuationToken)
 
-        Write-Debug "Processing pipelines for project '${projectName}'..."
+        Write-Host "Processing pipelines for project '${projectName}'..."
         $pipelineIndex = 0
         foreach ($pipeline in $pipelines) {
             $pipelineFullName = ("$($pipeline.folder)\$($pipeline.name)" -replace "[\\]+","\")
@@ -303,6 +303,7 @@ try {
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipelineFolder, pipelineFullName, pipelineName, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
+    Write-Host "`nDeprecated task usage in '${OrganizationUrl}':"
     $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, @{ Name='runUrl'; Expression = 'runUrl'; Width = 200 } | Out-String -Width 256
-    Write-Host "`Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
+    Write-Host "Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
 }
