@@ -99,6 +99,7 @@ function Write-ProgressMessage (
     }
 }
 
+
 if ($env:SYSTEM_DEBUG -eq "true") {
     $InformationPreference = "Continue"
     $VerbosePreference = "Continue"
