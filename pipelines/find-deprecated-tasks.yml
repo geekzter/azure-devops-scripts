@@ -4,11 +4,8 @@ parameters:
   type: string
   default: '<variable group name>'
   
-${{ if eq(parameters.variableGroup,'<variable group name>') }}:
-  name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-$(Build.BuildId)
-${{ else }}:
-  name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-$(parameters.variableGroup)-$(Build.BuildId)
-  
+name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.DefinitionVersion)-$(SourceBranchName)-${{ replace(parameters.variableGroup,'<variable group name>','') }}-$(Build.BuildId)
+
 pr:
   autoCancel: false
   branches:
