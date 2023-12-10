@@ -118,10 +118,10 @@ Invoke-AzDORestApi $tasksRequestUrl `
                    | Sort-Object -Property name, version `
                    | Set-Variable -Name deprecatedTasks
 
-$deprecatedTasks | Format-Table id, name, fullName, version | Out-String | Write-Debug
+Write-Host "The following tasks available in ${OrganizationUrl} are marked as deprecated:"
+$deprecatedTasks | Format-Table fullName, id, version
 
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
-
 if ($Project) {
     $projectNames = @($Project)
 } else {
@@ -170,6 +170,9 @@ try {
         Write-Debug "Retrieving pipelines for project '${projectName}'..."
         [System.Collections.ArrayList]$pipelines = @()
         do {
+            # BUG: Continuation token is not working when the same pipeline name exists in more than <top> folders
+            # BUG: orderBy is not working, $orderBy is for 'name asc' and 'name desc'
+            # BUG: $orderBy does not order on 'folder asc'
             "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=1000" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
                                                                                    | Set-Variable -Name pipelinesRequestUrl
         
@@ -187,6 +190,7 @@ try {
             } elseif ($pipelinesBatch.Count -gt 1) {
                 $pipelines.AddRange($pipelinesBatch)
             }
+            Write-Verbose "Retrieved $($pipelines.Count) pipelines for project '${projectName}' so far..."
             $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-ContinuationToken')"
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
         } while ($pipelineContinuationToken)
@@ -251,7 +255,7 @@ try {
             Write-Debug "timelineResponse: ${timelineResponse}"
     
             if (!$timelineRecords) {
-                Write-Warning "No timeline records found for pipeline run $($pipelineRun.id)"
+                Write-Verbose "No timeline records found for pipeline '${pipelineFullName}' run $($pipelineRun.id)"
                 continue
             }
 
