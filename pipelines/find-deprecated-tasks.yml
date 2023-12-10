@@ -44,7 +44,7 @@ jobs:
   steps:
   - pwsh: |
       ./find_deprecated_task_usage.ps1
-    displayName: 'Find deprecated tasks in $(System.TeamProject)'
+    displayName: 'Find deprecated tasks'
     workingDirectory: $(scriptDirectory)
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)

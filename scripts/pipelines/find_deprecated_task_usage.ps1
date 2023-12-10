@@ -119,7 +119,10 @@ Invoke-AzDORestApi $tasksRequestUrl `
                    | Set-Variable -Name deprecatedTasks
 
 Write-Host "The following tasks available in organization '${OrganizationUrl}' are marked as deprecated:"
-$deprecatedTasks | Format-Table -AutoSize -Property fullName, id, version
+$deprecatedTasks | Format-Table -AutoSize -Property @{ Name='fullName'; Expression = 'fullName'; Width = 40 }, `
+                                                    @{ Name='id'; Expression = 'id'; Width = 36 }, `
+                                                    @{ Name='version'; Expression = 'version'; Width = 8 } `
+                 | Out-String -Width 88
 
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
 if ($Project) {
