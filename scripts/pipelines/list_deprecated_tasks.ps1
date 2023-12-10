@@ -317,8 +317,8 @@ try {
 
     Write-Host "`nDeprecated task usage in '${OrganizationUrl}':"
     $allDeprecatedTimelineTasks | Format-Table -Property @{ Name='task'; Expression = 'taskFullName'; Width = 40 }, `
-                                                         @{ Name='pipeline'; Expression = 'runUrl'; Width = 200 }
-                                # | Out-String -Width 256
+                                                         @{ Name='pipeline'; Expression = 'runUrl'; Width = 200 } `
+                                | Out-String -Width 256
 
     Write-Host "Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
 }

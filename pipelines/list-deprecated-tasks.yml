@@ -1,6 +1,6 @@
 parameters:
 - name: includeUsage
-  displayName: Process pipeline runs to find deprecated tasks
+  displayName: Process pipeline runs to find deprecated task usage
   type: boolean
   default: true
 - name: variableGroup
