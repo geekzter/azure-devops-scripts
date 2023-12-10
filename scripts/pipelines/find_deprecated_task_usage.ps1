@@ -83,6 +83,15 @@ function Invoke-AzDORestApi (
     $apiResponse | Format-List | Out-String | Write-Debug
     return $apiResponse
 }
+if ($env:SYSTEM_DEBUG -eq "true") {
+    $InformationPreference = "Continue"
+    $VerbosePreference = "Continue"
+    $DebugPreference = "Continue"
+
+    # Set-PSDebug -Trace 1
+    
+    Get-ChildItem -Path Env: -Force -Recurse -Include * | Sort-Object -Property Name | Format-Table -AutoSize | Out-String
+}
 $apiVersion = "7.1"
 
 $organizationName = $OrganizationUrl.Split('/')[3]
@@ -130,7 +139,11 @@ if ($Project) {
                            | Sort-Object `
                            | Set-Variable projectNamesBatch
 
-        $projectNames.AddRange($projectNamesBatch)
+        if ($projectNamesBatch.Count -eq 1) {
+            $projectNames.Add($projectNamesBatch) | Out-Null
+        } elseif ($projectNamesBatch.Count -gt 1) {
+            $projectNames.AddRange($projectNamesBatch)
+        }
 
         $projectContinuationToken = "$($projectsResponse.Headers.'X-MS-ContinuationToken')"
     } while ($projectContinuationToken)
@@ -154,116 +167,124 @@ try {
         $projectUrl = "{0}/{1}" -f $OrganizationUrl, [uri]::EscapeUriString($projectName)
         $pipelineContinuationToken = $null
 
+        Write-Debug "Retrieving pipelines for project '${projectName}'..."
+        [System.Collections.ArrayList]$pipelines = @()
         do {
-            "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=200" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
-                                                                                  | Set-Variable -Name pipelinesRequestUrl
+            "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=1000" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
+                                                                                   | Set-Variable -Name pipelinesRequestUrl
         
             Write-Verbose "Retrieving pipelines for project '${projectUrl}'..."
             Write-Debug $pipelinesRequestUrl
-            $pipelines = $null
+            $pipelinesBatch = $null
             Invoke-AzDORestApi $pipelinesRequestUrl `
                                | Tee-Object -Variable pipelinesResponse `
                                | ConvertFrom-Json `
                                | Select-Object -ExpandProperty value `
-                               | Set-Variable pipelines
+                               | Set-Variable pipelinesBatch
         
+            if ($pipelinesBatch.Count -eq 1) {
+                $pipelines.Add($pipelinesBatch) | Out-Null
+            } elseif ($pipelinesBatch.Count -gt 1) {
+                $pipelines.AddRange($pipelinesBatch)
+            }
             $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-ContinuationToken')"
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
-        
-            $pipelineIndex = 0
-            foreach ($pipeline in $pipelines) {
-                $pipelineFullName = ("$($pipeline.folder)\$($pipeline.name)" -replace "[\\]+","\")
-                $pipelineIndex++
-                $pipelineLoopProgressParameters = @{
-                    ID               = 1
-                    Activity         = "Processing pipelines in '${projectName}'"
-                    Status           = "${pipelineFullName} (${pipelineIndex} of $($pipelines.Count))"
-                    PercentComplete  =  ($pipelineIndex / $($pipelines.Count)) * 100
-                    CurrentOperation = 'PipelineLoop'
-                }
-                Write-Progress @pipelineLoopProgressParameters
-        
-                Write-Debug "Pipeline run"
-                $pipeline | Format-List | Out-String | Write-Debug
-        
-                # GET https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/runs?api-version=7.2-preview.1
-                "{0}/_apis/pipelines/{1}/runs?&api-version={2}&`$top=200" -f $projectUrl, $pipeline.id, $apiVersion `
-                                                                          | Set-Variable -Name pipelineRunsRequestUrl
-        
-                Write-Debug $pipelineRunsRequestUrl
-                Invoke-AzDORestApi $pipelineRunsRequestUrl `
-                                   | Tee-Object -Variable pipelineRunsResponse `
-                                   | ConvertFrom-Json `
-                                   | Select-Object -ExpandProperty value `
-                                   | Tee-Object -Variable pipelineRuns `
-                                   | Select-Object -First 1 `
-                                   | Set-Variable pipelineRun
-                Write-Debug "timelineResponse: ${pipelineRunsResponse}"
-        
-                Write-Debug "Pipeline run:"
-                $pipelineRun | Format-List | Out-String | Write-Debug
-
-                if (!$pipelineRun) {
-                    Write-Debug "No pipeline runs found for pipeline $($pipeline.name)"
-                    continue
-                }
-        
-                "{0}/_apis/build/builds/{1}/timeline?api-version={2}" -f $projectUrl, $pipelineRun.id, $apiVersion `
-                                                                      | Set-Variable -Name timelineRequestUrl
-                Write-Debug $timelineRequestUrl
-                $timelineRecords = $null
-                Invoke-AzDORestApi $timelineRequestUrl `
-                                   | Tee-Object -Variable timelineResponse `
-                                   | ConvertFrom-Json `
-                                   | Select-Object -ExpandProperty records `
-                                   | Where-Object {$_.type -ieq "Task"} `
-                                   | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
-                                   | ForEach-Object {
-                                      $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
-                                      $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
-                                      $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
-                                      $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
-                                      $_
-                                    } `
-                                   | Set-Variable -Name timelineRecords
-                Write-Debug "timelineResponse: ${timelineResponse}"
-        
-                if (!$timelineRecords) {
-                    Write-Warning "No timeline records found for pipeline run $($pipelineRun.id)"
-                    continue
-                }
-
-                $deprecatedTimelineTasks = @{}
-                foreach ($task in $timelineRecords) {
-                    $deprecatedTask = $null
-                    $deprecatedTasks | Where-Object {$_.fullName -ieq $task.taskFullName} `
-                                     | Set-Variable -Name deprecatedTask
-                    if ($deprecatedTask) {  
-                        # Write-Warning "Task $($deprecatedTask.fullName) is deprecated, please update to a newer version"
-                        # $deprecatedTimelineTasks.Add($task) | Out-Null
-                        "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}&api-version={4}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id, $apiVersion `
-                                                                                               | Set-Variable -Name timelineRecordUrl
-                        if ($StreamResults) {
-                            $timelineRecordUrl | Out-String -Width 200 | Write-Host
-                        } else {
-                            $timelineRecordUrl | Out-String -Width 200 | Write-Verbose
-                        }
-                                                                                            
-                        $task | Add-Member -MemberType NoteProperty -Name organization -Value $organizationName
-                        $task | Add-Member -MemberType NoteProperty -Name pipelineFolder -Value $pipeline.folder
-                        $task | Add-Member -MemberType NoteProperty -Name pipelineFullName -Value $pipelineFullName
-                        $task | Add-Member -MemberType NoteProperty -Name pipelineName -Value $pipeline.name
-                        $task | Add-Member -MemberType NoteProperty -Name project -Value $projectName
-                        $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
-                        $task | Format-List | Out-String | Write-Debug
-                        # Use Hastable to track unique tasks per pipeline
-                        $deprecatedTimelineTasks[$task.taskFullName] = $task
-                    }
-                }
-                $allDeprecatedTimelineTasks.AddRange($deprecatedTimelineTasks.Values)
-                $deprecatedTimelineTasks.Values | Format-Table name, fullName, version, runUrl | Out-String | Write-Debug                                                                                               
-            }
         } while ($pipelineContinuationToken)
+
+        Write-Debug "Processing pipelines for project '${projectName}'..."
+        $pipelineIndex = 0
+        foreach ($pipeline in $pipelines) {
+            $pipelineFullName = ("$($pipeline.folder)\$($pipeline.name)" -replace "[\\]+","\")
+            $pipelineIndex++
+            $pipelineLoopProgressParameters = @{
+                ID               = 1
+                Activity         = "Processing pipelines in '${projectName}'"
+                Status           = "${pipelineFullName} (${pipelineIndex} of $($pipelines.Count))"
+                PercentComplete  =  ($pipelineIndex / $($pipelines.Count)) * 100
+                CurrentOperation = 'PipelineLoop'
+            }
+            Write-Progress @pipelineLoopProgressParameters
+    
+            Write-Debug "Pipeline run"
+            $pipeline | Format-List | Out-String | Write-Debug
+    
+            # GET https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/runs?api-version=7.2-preview.1
+            "{0}/_apis/pipelines/{1}/runs?&api-version={2}&`$top=200" -f $projectUrl, $pipeline.id, $apiVersion `
+                                                                        | Set-Variable -Name pipelineRunsRequestUrl
+    
+            Write-Debug $pipelineRunsRequestUrl
+            Invoke-AzDORestApi $pipelineRunsRequestUrl `
+                                | Tee-Object -Variable pipelineRunsResponse `
+                                | ConvertFrom-Json `
+                                | Select-Object -ExpandProperty value `
+                                | Tee-Object -Variable pipelineRuns `
+                                | Select-Object -First 1 `
+                                | Set-Variable pipelineRun
+            Write-Debug "timelineResponse: ${pipelineRunsResponse}"
+    
+            Write-Debug "Pipeline run:"
+            $pipelineRun | Format-List | Out-String | Write-Debug
+
+            if (!$pipelineRun) {
+                Write-Debug "No pipeline runs found for pipeline $($pipeline.name)"
+                continue
+            }
+    
+            "{0}/_apis/build/builds/{1}/timeline?api-version={2}" -f $projectUrl, $pipelineRun.id, $apiVersion `
+                                                                    | Set-Variable -Name timelineRequestUrl
+            Write-Debug $timelineRequestUrl
+            $timelineRecords = $null
+            Invoke-AzDORestApi $timelineRequestUrl `
+                                | Tee-Object -Variable timelineResponse `
+                                | ConvertFrom-Json `
+                                | Select-Object -ExpandProperty records `
+                                | Where-Object {$_.type -ieq "Task"} `
+                                | Where-Object {![String]::IsNullOrEmpty($_.task.name)}
+                                | ForEach-Object {
+                                    $_ | Add-Member -MemberType NoteProperty -Name taskId -Value $_.task.id
+                                    $_ | Add-Member -MemberType NoteProperty -Name taskName -Value $_.task.name
+                                    $_ | Add-Member -MemberType NoteProperty -Name taskFullName -Value ("{0}@{1}" -f $_.task.name, $_.task.version.Substring(0,1))
+                                    $_ | Add-Member -MemberType NoteProperty -Name taskVersion -Value $_.task.version
+                                    $_
+                                } `
+                                | Set-Variable -Name timelineRecords
+            Write-Debug "timelineResponse: ${timelineResponse}"
+    
+            if (!$timelineRecords) {
+                Write-Warning "No timeline records found for pipeline run $($pipelineRun.id)"
+                continue
+            }
+
+            $deprecatedTimelineTasks = @{}
+            foreach ($task in $timelineRecords) {
+                $deprecatedTask = $null
+                $deprecatedTasks | Where-Object {$_.fullName -ieq $task.taskFullName} `
+                                    | Set-Variable -Name deprecatedTask
+                if ($deprecatedTask) {  
+                    # Write-Warning "Task $($deprecatedTask.fullName) is deprecated, please update to a newer version"
+                    # $deprecatedTimelineTasks.Add($task) | Out-Null
+                    "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}&api-version={4}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id, $apiVersion `
+                                                                                            | Set-Variable -Name timelineRecordUrl
+                    if ($StreamResults) {
+                        $timelineRecordUrl | Out-String -Width 200 | Write-Host
+                    } else {
+                        $timelineRecordUrl | Out-String -Width 200 | Write-Verbose
+                    }
+                                                                                        
+                    $task | Add-Member -MemberType NoteProperty -Name organization -Value $organizationName
+                    $task | Add-Member -MemberType NoteProperty -Name pipelineFolder -Value $pipeline.folder
+                    $task | Add-Member -MemberType NoteProperty -Name pipelineFullName -Value $pipelineFullName
+                    $task | Add-Member -MemberType NoteProperty -Name pipelineName -Value $pipeline.name
+                    $task | Add-Member -MemberType NoteProperty -Name project -Value $projectName
+                    $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
+                    $task | Format-List | Out-String | Write-Debug
+                    # Use Hastable to track unique tasks per pipeline
+                    $deprecatedTimelineTasks[$task.taskFullName] = $task
+                }
+            }
+            $allDeprecatedTimelineTasks.AddRange($deprecatedTimelineTasks.Values)
+            $deprecatedTimelineTasks.Values | Format-Table name, fullName, version, runUrl | Out-String | Write-Debug                                                                                               
+        }
         Write-Progress Id 1 -Completed    
     }
     Write-Progress Id 0 -Completed
