@@ -47,6 +47,7 @@ jobs:
 
   steps:
   - pwsh: |
+      Write-Host "`$ProgressPreference: ${ProgressPreference}"
       ./list_deprecated_tasks.ps1 -ListTasksOnly:(!$${{ parameters.includeUsage }})
     displayName: 'Find deprecated tasks'
     workingDirectory: $(scriptDirectory)

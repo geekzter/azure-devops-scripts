@@ -55,7 +55,7 @@ function Invoke-AzDORestApi (
             $authHeader = "Basic ${base64AuthInfo}"
         } else {
             if (!(Get-Command az)) {
-                Write-Error "Azure CLI is not installed, get it at http://aka.ms/azure-cli"
+                Write-Error "Install Azure CLI (http://aka.ms/azure-cli) to log in to Azure DevOps"
                 exit 1
             }
             if (!$script:aadTokenExpiresOn -or $aadTokenExpired) {
