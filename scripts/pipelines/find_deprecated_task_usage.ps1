@@ -119,7 +119,7 @@ Invoke-AzDORestApi $tasksRequestUrl `
                    | Set-Variable -Name deprecatedTasks
 
 Write-Host "The following tasks available in organization '${OrganizationUrl}' are marked as deprecated:"
-$deprecatedTasks | Format-Table -AutoSize -Property @{ Name='fullName'; Expression = 'fullName'; Width = 40 }, `
+$deprecatedTasks | Format-Table -AutoSize -Property @{ Name='task'; Expression = 'fullName'; Width = 40 }, `
                                                     @{ Name='id'; Expression = 'id'; Width = 36 }, `
                                                     @{ Name='version'; Expression = 'version'; Width = 8 } `
                  | Out-String -Width 88
@@ -306,7 +306,11 @@ try {
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipelineFolder, pipelineFullName, pipelineName, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
+
     Write-Host "`nDeprecated task usage in '${OrganizationUrl}':"
-    $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, @{ Name='runUrl'; Expression = 'runUrl'; Width = 200 } | Out-String -Width 256
+    $allDeprecatedTimelineTasks | Format-Table -Property @{ Name='task'; Expression = 'taskFullName'; Width = 200 }, `
+                                                         @{ Name='pipeline'; Expression = 'runUrl'; Width = 200 } `
+                                | Out-String -Width 256
+
     Write-Host "Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
 }
