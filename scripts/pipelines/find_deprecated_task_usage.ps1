@@ -186,7 +186,6 @@ try {
                 }
                 Write-Progress @pipelineLoopProgressParameters
         
-
                 Write-Debug "Pipeline run"
                 $pipeline | Format-List | Out-String | Write-Debug
         
@@ -282,6 +281,6 @@ try {
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipelineFolder, pipelineFullName, pipelineName, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
-    $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, @{ Name='runUrl'; Expression = 'runUrl'; Width = 200 }
+    $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, @{ Name='runUrl'; Expression = 'runUrl'; Width = 200 } | Out-String -Width 256
     Write-Host "`Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
 }
