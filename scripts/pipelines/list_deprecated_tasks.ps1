@@ -20,6 +20,7 @@
 #>
 #Requires -Version 7.2
 # TODO:
+# - Warn if matches found in pipelines
 # - Find deprecated task usage in release pipelines
 
 param ( 
@@ -335,6 +336,20 @@ try {
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipelineFolder, pipelineFullName, pipelineName, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
+
+    if ($allDeprecatedTimelineTasks.Count -eq 0) {
+        Write-Host "`nNo deprecated task usage found in '${OrganizationUrl}'"
+        exit 0
+    } else {
+        $deprecationWarningMessage = "Deprecated task usage found in '${OrganizationUrl}'"
+        if ($Project) {
+            $deprecationWarningMessage += " for project '${Project}'"
+        }
+        Write-Warning ${deprecationWarningMessage}
+        if ($env:TF_BUILD -ieq 'true') {
+            Write-Host "##vso[task.logissue type=warning;]${deprecationWarningMessage}"
+        }
+    }
 
     Write-Host "`nDeprecated task usage in '${OrganizationUrl}':"
     $allDeprecatedTimelineTasks | Format-Table -Property @{ Name='task'; Expression = 'taskFullName'; Width = 40 }, `
