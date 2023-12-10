@@ -30,6 +30,10 @@ param (
     [string]
     $ExportDirectory=($env:BUILD_ARTIFACTSTAGINGDIRECTORY ?? [System.IO.Path]::GetTempPath()),
 
+    [parameter(Mandatory=$false,HelpMessage="Don't process pipelines to find task usage, only list deprecated tasks")]
+    [switch]
+    $ListTasksOnly=$false,
+
     [parameter(Mandatory=$false,HelpMessage="Show matches found as the script runs")]
     [switch]
     $StreamResults=($env:TF_BUILD -ieq 'true')
@@ -123,6 +127,10 @@ $deprecatedTasks | Format-Table -AutoSize -Property @{ Name='task'; Expression =
                                                     @{ Name='id'; Expression = 'id'; Width = 36 }, `
                                                     @{ Name='version'; Expression = 'version'; Width = 8 } `
                  | Out-String -Width 88
+
+if ($ListTasksOnly) {
+    exit 0
+}
 
 [System.Collections.ArrayList]$allDeprecatedTimelineTasks = @()
 if ($Project) {

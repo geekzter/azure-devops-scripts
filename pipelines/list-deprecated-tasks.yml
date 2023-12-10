@@ -1,4 +1,8 @@
 parameters:
+- name: includeUsage
+  displayName: Process pipeline runs to find deprecated tasks
+  type: boolean
+  default: true
 - name: variableGroup
   displayName: Variable group with AZDO_* variables
   type: string
@@ -43,7 +47,7 @@ jobs:
 
   steps:
   - pwsh: |
-      ./find_deprecated_task_usage.ps1
+      ./list_deprecated_tasks.ps1 -ListTasksOnly:!$${{ parameters.includeUsage }}
     displayName: 'Find deprecated tasks'
     workingDirectory: $(scriptDirectory)
     env:
