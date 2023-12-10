@@ -2,7 +2,7 @@ parameters:
 - name: variableGroup
   displayName: Variable group with AZDO_* variables
   type: string
-  default: ''
+  default: '<variable group name>'
   
 pr:
   autoCancel: false
@@ -27,7 +27,7 @@ trigger: none
 
 variables:
 - ${{ if parameters.variableGroup }}:
-  - group: ${{ ne(parameters.variableGroup,'') }} # can override AZDO_ORG_SERVICE_URL, AZDO_PROJECT, AZDO_PERSONAL_ACCESS_TOKEN
+  - group: ${{ ne(parameters.variableGroup,'<variable group name>') }} # can override AZDO_ORG_SERVICE_URL, AZDO_PROJECT, AZDO_PERSONAL_ACCESS_TOKEN
 - name: scriptDirectory
   value: $(Build.SourcesDirectory)/scripts/pipelines
 
