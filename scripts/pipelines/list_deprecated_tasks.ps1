@@ -1,32 +1,42 @@
 #!/usr/bin/env pwsh
-# TODO:
-# - Show progress over total # of pipelines by retrieving all pipelines first
-# - Support release pipelines
-# - Description & examples
-
 <# 
 .SYNOPSIS 
+    Find deprecated tasks used in Azure Pipelines
 
 .DESCRIPTION 
+    This script lists all deprecated tasks available in an Azure DevOps organization and then processes all pipelines in the organization for usage of those tasks.
+    The script will output a CSV file with the deprecated task usage and a summary of the deprecated task usage in the organization.
+    This script is intended to be used with the list-deprecated-tasks.yml pipeline
 
 .EXAMPLE
+    list_deprecated_tasks.ps1 -OrganizationUrl https://dev.azure.com/contoso -Project <project>
 
-#> 
+.EXAMPLE
+    list_deprecated_tasks.ps1 -OrganizationUrl https://dev.azure.com/contoso -Project <project> -Token <PAT>
 
+.EXAMPLE
+    list_deprecated_tasks.ps1 -ListTasksOnly
+
+#>
 #Requires -Version 7.2
+# TODO:
+# - Find deprecated task usage in release pipelines
 
 param ( 
+    [parameter(Mandatory=$false,HelpMessage="Azure DevOps organization url (e.g. https://dev.azure.com/contoso)")]
     [ValidateNotNullOrEmpty()]
     [string]
     $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI),
     
+    [parameter(Mandatory=$false,HelpMessage="Azure DevOps project name")]
     [string]
     $Project=$env:AZDO_PROJECT,
     
-    [parameter(Mandatory=$false,HelpMessage="PAT token with Build, Environment, Release scopes")]
+    [parameter(Mandatory=$false,HelpMessage="Access token with Build, Environment, Release scopes")]
     [string]
     $Token=($env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:AZURE_DEVOPS_EXT_PAT ?? $env:SYSTEM_ACCESSTOKEN),
 
+    [parameter(Mandatory=$false,HelpMessage="Path to export CSV file to")]
     [string]
     $ExportDirectory=($env:BUILD_ARTIFACTSTAGINGDIRECTORY ?? [System.IO.Path]::GetTempPath()),
 
@@ -200,7 +210,6 @@ try {
             "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=1000" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
                                                                                    | Set-Variable -Name pipelinesRequestUrl
         
-            Write-Verbose "Retrieving pipelines for project '${projectUrl}'..."
             Write-Debug $pipelinesRequestUrl
             $pipelinesBatch = $null
             Invoke-AzDORestApi $pipelinesRequestUrl `
@@ -214,7 +223,7 @@ try {
             } elseif ($pipelinesBatch.Count -gt 1) {
                 $pipelines.AddRange($pipelinesBatch)
             }
-            Write-Verbose "Retrieved $($pipelines.Count) pipelines for project '${projectName}' so far..."
+            Write-ProgressMessage "Retrieved $($pipelines.Count) pipelines for project '${projectName}' so far..."
             $pipelineContinuationToken = "$($pipelinesResponse.Headers.'X-MS-ContinuationToken')"
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
         } while ($pipelineContinuationToken)
@@ -236,7 +245,6 @@ try {
             Write-Debug "Pipeline run"
             $pipeline | Format-List | Out-String | Write-Debug
     
-            # GET https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/runs?api-version=7.2-preview.1
             "{0}/_apis/pipelines/{1}/runs?&api-version={2}&`$top=200" -f $projectUrl, $pipeline.id, $apiVersion `
                                                                         | Set-Variable -Name pipelineRunsRequestUrl
     
@@ -306,7 +314,7 @@ try {
                     $task | Add-Member -MemberType NoteProperty -Name project -Value $projectName
                     $task | Add-Member -MemberType NoteProperty -Name runUrl -Value $timelineRecordUrl
                     $task | Format-List | Out-String | Write-Debug
-                    # Use Hastable to track unique tasks per pipeline
+                    # Use Hastable to track unique tasks per pipeline only
                     $deprecatedTimelineTasks[$task.taskFullName] = $task
                 }
             }
