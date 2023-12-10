@@ -47,7 +47,7 @@ jobs:
 
   steps:
   - pwsh: |
-      ./list_deprecated_tasks.ps1 -ListTasksOnly:!$${{ parameters.includeUsage }}
+      ./list_deprecated_tasks.ps1 -ListTasksOnly:(!$${{ parameters.includeUsage }})
     displayName: 'Find deprecated tasks'
     workingDirectory: $(scriptDirectory)
     env:
