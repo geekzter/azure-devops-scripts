@@ -20,7 +20,6 @@
 #>
 #Requires -Version 7.2
 # TODO:
-# - Warn if matches found in pipelines
 # - Find deprecated task usage in release pipelines
 
 param ( 
