@@ -16,6 +16,7 @@
 #Requires -Version 7.2
 
 param ( 
+    [ValidateNotNullOrEmpty()]
     [string]
     $OrganizationUrl=($env:AZDO_ORG_SERVICE_URL ?? $env:SYSTEM_COLLECTIONURI),
     
@@ -24,12 +25,12 @@ param (
     
     [parameter(Mandatory=$false,HelpMessage="PAT token with Build, Environment, Release scopes")]
     [string]
-    $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN),
+    $Token=($env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:AZURE_DEVOPS_EXT_PAT ?? $env:SYSTEM_ACCESSTOKEN),
 
     [string]
     $ExportDirectory=($env:BUILD_ARTIFACTSTAGINGDIRECTORY ?? [System.IO.Path]::GetTempPath()),
 
-    [parameter(Mandatory=$false,HelpMessage="Show pipeline runs that use deprecated tasks as the script runs")]
+    [parameter(Mandatory=$false,HelpMessage="Show matches found as the script runs")]
     [switch]
     $StreamResults=($env:TF_BUILD -ieq 'true')
 ) 
@@ -82,10 +83,7 @@ function Invoke-AzDORestApi (
     $apiResponse | Format-List | Out-String | Write-Debug
     return $apiResponse
 }
-# $apiVersion = "7.1-preview.2"
-# $apiVersion = "7.1-preview.1"
 $apiVersion = "7.1"
-# $apiVersion = "7.2-preview.1"
 
 $organizationName = $OrganizationUrl.Split('/')[3]
 $OrganizationUrl = $OrganizationUrl.ToString().TrimEnd('/')
