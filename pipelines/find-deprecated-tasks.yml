@@ -26,8 +26,8 @@ schedules:
 trigger: none
 
 variables:
-- ${{ if parameters.variableGroup }}:
-  - group: ${{ ne(parameters.variableGroup,'<variable group name>') }} # can override AZDO_ORG_SERVICE_URL, AZDO_PROJECT, AZDO_PERSONAL_ACCESS_TOKEN
+- ${{ if ne(parameters.variableGroup,'<variable group name>') }}:
+  - group: ${{ parameters.variableGroup }} # can override AZDO_ORG_SERVICE_URL, AZDO_PROJECT, AZDO_PERSONAL_ACCESS_TOKEN
 - name: scriptDirectory
   value: $(Build.SourcesDirectory)/scripts/pipelines
 
