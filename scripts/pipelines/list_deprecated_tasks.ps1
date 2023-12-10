@@ -64,8 +64,8 @@ function Invoke-AzDORestApi (
             $base64AuthInfo = [Convert]::ToBase64String([System.Text.ASCIIEncoding]::ASCII.GetBytes(":${Token}"))
             $authHeader = "Basic ${base64AuthInfo}"
         } else {
-            if (!(Get-Command az)) {
-                Write-Error "Install Azure CLI (http://aka.ms/azure-cli) to log in to Azure DevOps"
+            if (!(Get-Command az -ErrorAction SilentlyContinue)) {
+                Write-Error "Install Azure CLI (http://aka.ms/azure-cli) to log in to Azure DevOps without specifying a token"
                 exit 1
             }
             if (!$script:aadTokenExpiresOn -or $aadTokenExpired) {
