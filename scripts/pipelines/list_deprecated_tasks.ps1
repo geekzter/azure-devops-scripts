@@ -93,7 +93,6 @@ function Invoke-AzDORestApi (
                       -Uri $Url `
                       | Set-Variable -Name apiResponse
 
-    Write-Debug "Api response: ${Url}"
     $apiResponse | Format-List | Out-String | Write-Debug
     return $apiResponse
 }
@@ -350,7 +349,4 @@ try {
                                 | Out-String -Width 256
 
     Write-Host "Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
-
-    $global:foo = $allDeprecatedTimelineTasks 
-
 }
