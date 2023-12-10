@@ -1,7 +1,8 @@
 #!/usr/bin/env pwsh
 # TODO:
-# - Support release pipelines
 # - Show progress over total # of pipelines by retrieving all pipelines first
+# - Fix hyperlinks in Pipeline logs
+# - Support release pipelines
 # - Description & examples
 
 <# 
@@ -27,7 +28,11 @@ param (
     $Token=($env:AZURE_DEVOPS_EXT_PAT ?? $env:AZDO_PERSONAL_ACCESS_TOKEN ?? $env:SYSTEM_ACCESSTOKEN),
 
     [string]
-    $ExportDirectory=($env:BUILD_ARTIFACTSTAGINGDIRECTORY ?? [System.IO.Path]::GetTempPath())
+    $ExportDirectory=($env:BUILD_ARTIFACTSTAGINGDIRECTORY ?? [System.IO.Path]::GetTempPath()),
+
+    [parameter(Mandatory=$false,HelpMessage="Show pipeline runs that use deprecated tasks as the script runs")]
+    [switch]
+    $StreamResults=($env:AGENT_ID -ne $null)
 ) 
 function Invoke-AzDORestApi (
     [parameter(Mandatory=$true)]
@@ -242,7 +247,12 @@ try {
                         # $deprecatedTimelineTasks.Add($task) | Out-Null
                         "{0}/_build/results?buildId={1}&view=logs&j={2}&t={3}&api-version={4}" -f $projectUrl, $pipelineRun.id, $task.parentId, $task.id, $apiVersion `
                                                                                                | Set-Variable -Name timelineRecordUrl
-                        
+                        if ($StreamResults) {
+                            $timelineRecordUrl | Out-String -Width 200 | Write-Host
+                        } else {
+                            $timelineRecordUrl | Out-String -Width 200 | Write-Verbose
+                        }
+                                                                                            
                         $task | Add-Member -MemberType NoteProperty -Name organization -Value $organizationName
                         $task | Add-Member -MemberType NoteProperty -Name pipelineFolder -Value $pipeline.folder
                         $task | Add-Member -MemberType NoteProperty -Name pipelineFullName -Value $pipelineFullName
@@ -272,6 +282,6 @@ try {
     $exportFilePath = (Join-Path $ExportDirectory "${exportFilePrefix}-$([DateTime]::Now.ToString('yyyyddhhmmss')).csv")
     $allDeprecatedTimelineTasks | Select-Object -Property organization, project, pipelineFolder, pipelineFullName, pipelineName, taskId, taskName, taskFullName, taskVersion, runUrl `
                                 | Export-Csv -Path $exportFilePath
-    $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, runUrl
+    $allDeprecatedTimelineTasks | Format-Table -Property taskFullName, @{ Name='runUrl'; Expression = 'runUrl'; Width = 200 }
     Write-Host "`Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
 }
