@@ -87,6 +87,21 @@ function Invoke-AzDORestApi (
     $apiResponse | Format-List | Out-String | Write-Debug
     return $apiResponse
 }
+function Write-ProgressMessage (
+    [parameter(Mandatory=$true)]
+    [string]
+    $Message
+) {
+    if ($ProgressPreference -ieq 'SilentlyContinue') {
+        Write-Host $Message
+    } else {
+        Write-Verbose $Message
+    }
+}
+
+#SilentlyContinue
+
+
 if ($env:SYSTEM_DEBUG -eq "true") {
     $InformationPreference = "Continue"
     $VerbosePreference = "Continue"
@@ -140,7 +155,7 @@ if ($Project) {
     do {
         "{0}/_apis/projects?`$top=200&continuationToken={1}&api-version={2}" -f $OrganizationUrl, $projectContinuationToken, $apiVersion `
                                                                              | Set-Variable -Name projectsRequestUrl
-        Write-Host "Retrieving projects for organization '${OrganizationUrl}'..."
+        Write-ProgressMessage "Retrieving projects for organization '${OrganizationUrl}'..."
         Write-Debug $projectsRequestUrl
         Invoke-AzDORestApi $projectsRequestUrl `
                            | Tee-Object -Variable projectsResponse `
@@ -178,7 +193,7 @@ try {
         $projectUrl = "{0}/{1}" -f $OrganizationUrl, [uri]::EscapeUriString($projectName)
         $pipelineContinuationToken = $null
 
-        Write-Host "Retrieving pipelines for project '${projectName}'..."
+        Write-ProgressMessage "Retrieving pipelines for project '${projectName}'..."
         [System.Collections.ArrayList]$pipelines = @()
         do {
             # BUG: Continuation token is not working when the same pipeline name exists in more than <top> folders
@@ -206,7 +221,7 @@ try {
             Write-Debug "pipelineContinuationToken: ${pipelineContinuationToken}"
         } while ($pipelineContinuationToken)
 
-        Write-Host "Processing pipelines for project '${projectName}'..."
+        Write-ProgressMessage "Processing pipelines for project '${projectName}'..."
         $pipelineIndex = 0
         foreach ($pipeline in $pipelines) {
             $pipelineFullName = ("$($pipeline.folder)\$($pipeline.name)" -replace "[\\]+","\")
