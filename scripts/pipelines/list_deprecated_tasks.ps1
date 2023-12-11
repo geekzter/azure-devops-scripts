@@ -247,13 +247,14 @@ try {
     
             $pipelineRun = $null
             Invoke-AzDORestApi $pipelineRunsRequestUrl `
-                                | Tee-Object -Variable pipelineRunsResponse `
-                                | ConvertFrom-Json `
-                                | Select-Object -ExpandProperty value `
-                                | Tee-Object -Variable pipelineRuns `
-                                | Where-Object {$_.result -ieq "succeeded"} `
-                                | Select-Object -First 1 `
-                                | Set-Variable pipelineRun
+                               | Tee-Object -Variable pipelineRunsResponse `
+                               | ConvertFrom-Json `
+                               | Select-Object -ExpandProperty value `
+                               | Tee-Object -Variable pipelineRuns `
+                               | Where-Object {$_.result -ieq "succeeded"} `
+                               | Sort-Object -Property createdDate -Descending `
+                               | Select-Object -First 1 `
+                               | Set-Variable pipelineRun
     
             Write-Debug "Pipeline run:"
             $pipelineRun | Format-List | Out-String | Write-Debug
@@ -262,7 +263,7 @@ try {
                 Write-Debug "No pipeline runs found for pipeline $($pipeline.name)"
                 continue
             }
-    
+
             "{0}/_apis/build/builds/{1}/timeline?api-version={2}" -f $projectUrl, $pipelineRun.id, $apiVersion `
                                                                    | Set-Variable -Name timelineRequestUrl
             $timelineRecords = $null
