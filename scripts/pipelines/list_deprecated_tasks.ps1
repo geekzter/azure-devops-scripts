@@ -64,8 +64,8 @@ function Invoke-AzDORestApi (
             $base64AuthInfo = [Convert]::ToBase64String([System.Text.ASCIIEncoding]::ASCII.GetBytes(":${Token}"))
             $authHeader = "Basic ${base64AuthInfo}"
         } else {
-            if (!(Get-Command az)) {
-                Write-Error "Install Azure CLI (http://aka.ms/azure-cli) to log in to Azure DevOps"
+            if (!(Get-Command az -ErrorAction SilentlyContinue)) {
+                Write-Error "Install Azure CLI (http://aka.ms/azure-cli) to log in to Azure DevOps without specifying a token"
                 exit 1
             }
             if (!$script:aadTokenExpiresOn -or $aadTokenExpired) {
@@ -93,7 +93,6 @@ function Invoke-AzDORestApi (
                       -Uri $Url `
                       | Set-Variable -Name apiResponse
 
-    Write-Debug "Api response: ${Url}"
     $apiResponse | Format-List | Out-String | Write-Debug
     return $apiResponse
 }
@@ -206,7 +205,7 @@ try {
             # BUG: Continuation token is not working when the same pipeline name exists in more than <top> folders
             # BUG: orderBy is not working, $orderBy is
             # BUG: $orderBy does not order on 'folder asc'
-            "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=1000" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
+            "{0}/_apis/pipelines?continuationToken={1}&`$top=1000&api-version={2}" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
                                                                                    | Set-Variable -Name pipelinesRequestUrl
         
             $pipelinesBatch = $null
@@ -243,17 +242,19 @@ try {
             Write-Debug "Pipeline run"
             $pipeline | Format-List | Out-String | Write-Debug
     
-            "{0}/_apis/pipelines/{1}/runs?&api-version={2}&`$top=200" -f $projectUrl, $pipeline.id, $apiVersion `
-                                                                        | Set-Variable -Name pipelineRunsRequestUrl
+            "{0}/_apis/pipelines/{1}/runs?`$top=200&api-version={2}" -f $projectUrl, $pipeline.id, $apiVersion `
+                                                                     | Set-Variable -Name pipelineRunsRequestUrl
     
             $pipelineRun = $null
             Invoke-AzDORestApi $pipelineRunsRequestUrl `
-                                | Tee-Object -Variable pipelineRunsResponse `
-                                | ConvertFrom-Json `
-                                | Select-Object -ExpandProperty value `
-                                | Tee-Object -Variable pipelineRuns `
-                                | Select-Object -First 1 `
-                                | Set-Variable pipelineRun
+                               | Tee-Object -Variable pipelineRunsResponse `
+                               | ConvertFrom-Json `
+                               | Select-Object -ExpandProperty value `
+                               | Tee-Object -Variable pipelineRuns `
+                               | Where-Object {$_.result -ieq "succeeded"} `
+                               | Sort-Object -Property createdDate -Descending `
+                               | Select-Object -First 1 `
+                               | Set-Variable pipelineRun
     
             Write-Debug "Pipeline run:"
             $pipelineRun | Format-List | Out-String | Write-Debug
@@ -262,7 +263,7 @@ try {
                 Write-Debug "No pipeline runs found for pipeline $($pipeline.name)"
                 continue
             }
-    
+
             "{0}/_apis/build/builds/{1}/timeline?api-version={2}" -f $projectUrl, $pipelineRun.id, $apiVersion `
                                                                    | Set-Variable -Name timelineRequestUrl
             $timelineRecords = $null
@@ -350,7 +351,4 @@ try {
                                 | Out-String -Width 256
 
     Write-Host "Deprecated task usage in '${OrganizationUrl}' has been saved to ${exportFilePath}"
-
-    $global:foo = $allDeprecatedTimelineTasks 
-
 }
