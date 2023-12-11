@@ -205,7 +205,7 @@ try {
             # BUG: Continuation token is not working when the same pipeline name exists in more than <top> folders
             # BUG: orderBy is not working, $orderBy is
             # BUG: $orderBy does not order on 'folder asc'
-            "{0}/_apis/pipelines?continuationToken={1}&api-version={2}&`$top=1000" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
+            "{0}/_apis/pipelines?continuationToken={1}&`$top=1000&api-version={2}" -f $projectUrl, $pipelineContinuationToken, $apiVersion `
                                                                                    | Set-Variable -Name pipelinesRequestUrl
         
             $pipelinesBatch = $null
@@ -242,8 +242,8 @@ try {
             Write-Debug "Pipeline run"
             $pipeline | Format-List | Out-String | Write-Debug
     
-            "{0}/_apis/pipelines/{1}/runs?&api-version={2}&`$top=200" -f $projectUrl, $pipeline.id, $apiVersion `
-                                                                        | Set-Variable -Name pipelineRunsRequestUrl
+            "{0}/_apis/pipelines/{1}/runs?`$top=200&api-version={2}" -f $projectUrl, $pipeline.id, $apiVersion `
+                                                                     | Set-Variable -Name pipelineRunsRequestUrl
     
             $pipelineRun = $null
             Invoke-AzDORestApi $pipelineRunsRequestUrl `
@@ -251,6 +251,7 @@ try {
                                 | ConvertFrom-Json `
                                 | Select-Object -ExpandProperty value `
                                 | Tee-Object -Variable pipelineRuns `
+                                | Where-Object {$_.result -ieq "succeeded"} `
                                 | Select-Object -First 1 `
                                 | Set-Variable pipelineRun
     
