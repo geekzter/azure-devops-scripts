@@ -96,7 +96,7 @@ $tasks | ForEach-Object {[PSCustomObject]$_} `
                | Set-Variable serviceConnections
             $_ | Add-Member -MemberType NoteProperty -Name serviceConnections -Value ($serviceConnections -join ",")
                if ($_ | Select-Object -ExpandProperty inputs -ErrorAction SilentlyContinue `
-                   | Where-Object {($_.type -ieq 'connectedService:azurerm') -or ($_.type -ieq 'connectedService:dockerregistry') -or ($_.type -ieq 'connectedService:kubernetes') -or ($_.type -ieq 'connectedService:servicebus')} `
+                   | Where-Object {($_.type -ieq 'connectedService:azurerm') -or ($_.type -ieq 'connectedService:dockerregistry') -or ($_.type -ieq 'connectedService:kubernetes') -or ($_.type -ieq 'connectedService:azureservicebus')} `
                ) {
                 $_ | Add-Member -MemberType NoteProperty -Name isAzureTask -Value $true
             } else {
