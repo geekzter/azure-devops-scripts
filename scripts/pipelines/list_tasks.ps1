@@ -129,10 +129,15 @@ if ($NodeTasksOnly) {
 
 # Format results
 if ($Format -eq "Ids") {
-    $tasks | Select-Object -ExpandProperty id `
-           | Get-Unique `
+    $tasks | ForEach-Object {
+               $_.id.ToUpper()
+             } `
            | Sort-Object `
+           | Get-Unique `
            | Set-Variable tasks
+
+    $tasks
+    ($tasks -replace "^|$","`"") -join ","
 } else {
     $tasks | ForEach-Object {
                 "{0}@{1}" -f $_.name, $_.version.Major | Set-Variable fullName
@@ -147,10 +152,11 @@ if ($Format -eq "Ids") {
            | Sort-Object -Property fullName `
            | Select-Object -Property $Property `
            | Set-Variable tasks
+
+    # Display results
+    $tasks | Format-Table
 }
 
-# Display results
-$tasks | Format-Table
 
 if ($NodeTasksOnly) {
     foreach ($nodeProperty in $nodeProperties) {
