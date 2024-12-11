@@ -2,6 +2,9 @@
 <# 
 .SYNOPSIS 
     Get Azure Pipeline task data from the Azure Pipelines task repo
+.EXAMPLE
+    Export tasks with deprecation status to CSV
+    ./list_tasks.ps1 -Property fullName, id, deprecated, majorVersion, isAzureTask -Format Csv
 #> 
 #Requires -Version 7.2
 param ( 
