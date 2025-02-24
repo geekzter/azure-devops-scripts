@@ -54,9 +54,9 @@ function Get-AgentPackageUrl (
     $VersionPreference="Current",
 
     [parameter(Mandatory=$false)]
-    [ValidateSet(2, 3)]
+    [ValidateSet(2, 3, 4)]
     [int]
-    $MajorVersion=3
+    $MajorVersion=4
 ) {
     (Invoke-RestMethod -Uri https://api.github.com/repos/microsoft/azure-pipelines-agent/releases) `
                        | Where-Object {!$_.draft} `
