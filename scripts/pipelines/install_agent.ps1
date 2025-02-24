@@ -36,9 +36,9 @@ param (
     $Project,
     
     [parameter(Mandatory=$false)]
-    [ValidateSet(2, 3)]
+    [ValidateSet(2, 3, 4)]
     [int]
-    $MajorVersion=3,
+    $MajorVersion=4,
 
     [parameter(Mandatory=$false)][switch]
     $ExcludeNode6,
@@ -139,7 +139,7 @@ if ($Remove) {
         $presetToken = $env:AZURE_DEVOPS_EXT_PAT
         Push-Location $pipelineDirectory 
     
-        Get-AgentPackageUrl -VersionPreference $VersionPreference | Set-Variable agentPackageUrl
+        Get-AgentPackageUrl -MajorVersion $MajorVersion -VersionPreference $VersionPreference | Set-Variable agentPackageUrl
         Write-Debug "Agent package URL: '${agentPackageUrl}'"
         $agentPackageUrl -Split '/' | Select-Object -Last 1 | Set-Variable agentPackage
         Write-Debug "Agent package: '${agentPackage}'"
