@@ -46,10 +46,12 @@ jobs:
 
   steps:
     - pwsh: |
-        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 2 -VersionPreference Current
-        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 2 -VersionPreference Current
-        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 3 -VersionPreference Prerelease
-        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 3 -VersionPreference Prerelease
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 3 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 3 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 4 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 4 -VersionPreference Current
+        ./get_agent_version.ps1 -ExcludeNode6:$false -MajorVersion 4 -VersionPreference Prerelease
+        ./get_agent_version.ps1 -ExcludeNode6:$true  -MajorVersion 4 -VersionPreference Prerelease
       displayName: 'Test get_agent_version.ps1'
       workingDirectory: '$(Build.SourcesDirectory)/scripts/pipelines'
       retryCountOnTaskFailure: ${{ parameters.retryCount }} # In case of GitHub rate limiting
