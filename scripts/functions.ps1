@@ -117,7 +117,7 @@ function Get-AgentPackageUrl (
 
     $packagePrefix = $ExcludeEoLNode ? "pipelines" : "vsts"
     "{0}-agent-{1}-{2}.{3}" -f $packagePrefix, $osString, $agentVersion, $extension | Set-Variable agentPackage
-    "https://download.dev.azure.com/agent/{0}/{1}" -f $agentVersion, $agentPackage | Set-Variable packageUrl
+    "https://download.agent.dev.azure.com/agent/{0}/{1}" -f $agentVersion, $agentPackage | Set-Variable packageUrl
 
     try {
         Write-Verbose "Validating whether package exists at '${packageUrl}'..."
