@@ -47,7 +47,7 @@ function Get-AccessToken (
 
 function Get-AgentPackageUrl (
     [parameter(Mandatory=$false)][switch]
-    $ExcludeNode6,
+    $ExcludeEoLNode,
 
     [parameter(Mandatory=$false)][string]
     [ValidateSet("Previous", "Current", "Prerelease")]
@@ -115,7 +115,7 @@ function Get-AgentPackageUrl (
         $extension = "tar.gz"
     }
 
-    $packagePrefix = $ExcludeNode6 ? "pipelines" : "vsts"
+    $packagePrefix = $ExcludeEoLNode ? "pipelines" : "vsts"
     "{0}-agent-{1}-{2}.{3}" -f $packagePrefix, $osString, $agentVersion, $extension | Set-Variable agentPackage
     "https://download.dev.azure.com/agent/{0}/{1}" -f $agentVersion, $agentPackage | Set-Variable packageUrl
 
@@ -125,7 +125,7 @@ function Get-AgentPackageUrl (
         $packageResponse | Format-List | Out-String | Write-Debug
         "Agent package for '{0}' ({1},{2}):`n{3}" -f $PSVersionTable.OS, `
                                                      $VersionPreference, `
-                                                     ($ExcludeNode6 ? "ExcludeNode6" : "IncludeNode6"), `
+                                                     ($ExcludeEoLNode ? "ExcludeEoLNode" : "IncludeNode6"), `
                                                      $packageUrl `
                                                    | Write-Verbose
         return $packageUrl

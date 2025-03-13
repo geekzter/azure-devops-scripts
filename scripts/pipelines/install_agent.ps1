@@ -41,7 +41,7 @@ param (
     $MajorVersion=4,
 
     [parameter(Mandatory=$false)][switch]
-    $ExcludeNode6,
+    $ExcludeEoLNode,
 
     [parameter(Mandatory=$false,HelpMessage="Azure DevOps token, if not provided will be inferred from environment")]
     [string]
