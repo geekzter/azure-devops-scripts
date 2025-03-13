@@ -6,21 +6,21 @@
 #Requires -Version 7.2
 param ( 
     [parameter(Mandatory=$false)][switch]
-    $ExcludeNode6,
+    $ExcludeEoLNode,
 
     [parameter(Mandatory=$false)][string]
     [ValidateSet("Previous", "Current", "Prerelease")]
     $VersionPreference="Current",
 
     [parameter(Mandatory=$false)]
-    [ValidateSet(2, 3)]
+    [ValidateSet(2, 3, 4)]
     [int]
-    $MajorVersion=3
+    $MajorVersion=4
 ) 
 
 . (Join-Path $PSScriptRoot .. functions.ps1)
 
-$agentPackageUrl = Get-AgentPackageUrl -ExcludeNode6:$ExcludeNode6 `
+$agentPackageUrl = Get-AgentPackageUrl -ExcludeEoLNode:$ExcludeEoLNode `
                                        -VersionPreference $VersionPreference `
                                        -MajorVersion $MajorVersion
 
