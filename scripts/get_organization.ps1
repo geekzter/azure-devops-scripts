@@ -92,23 +92,23 @@ if (!$account) {
 Add-Member -InputObject $account -NotePropertyName issuerUrl -NotePropertyValue "https://vstoken.dev.azure.com/$($account.accountId)"
 $account | Format-List
 
-Write-Host "Retrieving users from users REST API..."
-$usersUrl = "https://vssps.dev.azure.com/${organizationName}/_apis/graph/serviceprincipals?api-version=7.1-preview.1"
-# $usersUrl = "https://vssps.dev.azure.com/${organizationName}/_apis/graph/users?subjectTypes=aad&api-version=7.1-preview.1"
-Write-Debug $usersUrl
-Invoke-WebRequest -Uri $usersUrl `
-                  -Headers @{
-                      Accept         = "application/json"
-                      Authorization  = $authHeader
-                      "Content-Type" = "application/json"
-                  } `
-                  -Method Get `
-                  | Tee-Object -Variable usersResponse `
-                  | Select-Object -ExpandProperty Content `
-                  | Tee-Object -Variable usersJson `
-                  | ConvertFrom-Json `
-                  | Select-Object -ExpandProperty value `
-                  | Tee-Object -Variable users
-$usersResponse | Format-List | Out-String | Write-Debug
-$usersJson | ConvertFrom-Json -Depth 5 | ConvertTo-Json -Depth 5 | Write-Debug
-$users | Format-Table | Out-String | Write-Debug
+# Write-Host "Retrieving users from users REST API..."
+# $usersUrl = "https://vssps.dev.azure.com/${organizationName}/_apis/graph/serviceprincipals?api-version=7.1-preview.1"
+# # $usersUrl = "https://vssps.dev.azure.com/${organizationName}/_apis/graph/users?subjectTypes=aad&api-version=7.1-preview.1"
+# Write-Debug $usersUrl
+# Invoke-WebRequest -Uri $usersUrl `
+#                   -Headers @{
+#                       Accept         = "application/json"
+#                       Authorization  = $authHeader
+#                       "Content-Type" = "application/json"
+#                   } `
+#                   -Method Get `
+#                   | Tee-Object -Variable usersResponse `
+#                   | Select-Object -ExpandProperty Content `
+#                   | Tee-Object -Variable usersJson `
+#                   | ConvertFrom-Json `
+#                   | Select-Object -ExpandProperty value `
+#                   | Tee-Object -Variable users
+# $usersResponse | Format-List | Out-String | Write-Debug
+# $usersJson | ConvertFrom-Json -Depth 5 | ConvertTo-Json -Depth 5 | Write-Debug
+# $users | Format-Table | Out-String | Write-Debug
